@@ -441,6 +441,21 @@ export function createGrass(options: GrassOptions): Grass {
   const inShade = () => uShadeTint.div(mix(uShadeTint, uSunTint, 0.62));
 
   /**
+   * How much a place is in one of its species' patches, 0..1: a noise as wide as the patches, cut at the
+   * level that leaves the species' share of the ground above it, with a soft edge.
+   */
+  const inPatch = (xz: Vec2, k: THREE.Node<"int">): THREE.Node<"float"> => {
+    const share = row(k, 10).w;
+    const size = row(k, 8).z;
+    const lumps = noise(xz.div(size.mul(4)).add(0.37)).r.mul(0.65).add(noise(xz.div(size.mul(1.3)).add(0.81)).g.mul(0.35));
+    // (The noise is mostly near its middle: the cut runs from 0.72 for a little of the ground to 0.28 for most of it.)
+    const cut = mix(float(0.72), float(0.28), share);
+    return smoothstep(cut.sub(0.03), cut.add(0.03), lumps).mul(step(float(0.005), share));
+  };
+  /** A place's colour for being in a patch or not, as a multiplier. */
+  const patchTint = (xz: Vec2, k: THREE.Node<"int">): Vec3 => mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), inPatch(xz, k));
+
+  /**
    * How much of the light reaches a stand's roots, 0..1. Light falls off through leaves as exp(-K L)
    * (Monsi and Saeki), L the leaf area passed on the way down. The stand's leaf area index is taken from
    * its height (mown bluegrass was measured at 3.2 at 3.8 cm and 4.9 at 7.6 cm, a putting green at about
@@ -566,7 +581,7 @@ export function createGrass(options: GrassOptions): Grass {
     const windTakes = min(smoothstep(float(0.075), float(0.17), row(k, 0).x).mul(float(1).sub(row(k, 2).w)).mul(1.4), float(1));
     const blown = float(1).add(gustIs.sub(0.5).mul(windTakes).mul(clamp(uWind.z.div(8.0), float(0), float(1.7))).mul(far).mul(GUST_PALE));
     // (Bare ground is shaded as grown ground is: a path beside tall grass lies in its shadow.)
-    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
+    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
   };
 
   const geometries: THREE.BufferGeometry[] = [];
@@ -997,6 +1012,8 @@ export function createGrass(options: GrassOptions): Grass {
         const grow = alive.mul(rooted).mul(rangeFade).mul(thin).mul(layerOn);
 
         const tallNode = tall0.toVar();
+        // (The grass in a patch is its own height.)
+        tallNode.mulAssign(mix(float(1), row(k, 8).w, inPatch(xz, k)));
         // Beside shorter grass, or bare ground, a stand comes down to meet it over a stride (by the canopy's
         // picture, which is the mean of the two at their line): never up, so mown turf beside rough stays
         // mown to its edge, and what is left at the line is a step half the height it was.
@@ -1066,7 +1083,7 @@ export function createGrass(options: GrassOptions): Grass {
           .add(lay.mul(LAY_LEAN));
 
         // (What of the sky it sees is worked out half way up it, and is in its colour; the sun at its root and at its tip go with it, for the leaf to shade between.)
-        const colLit = tone(xz, base).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
+        const colLit = tone(xz, base).mul(patchTint(xz, k)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
         // (A fine leaf is broadened for the leaves the view thinned out about it, not for those its species never grows.)
         const broaden = clamp(float(1).div(pow(max(viewShare, float(0.1)), float(0.5))).sub(1), float(0), float(BROADEN_MAX));
         outState.assign(vec4(lean.x, lean.y, tall, gust.sub(0.5).mul(min(windTakes, float(1)))));

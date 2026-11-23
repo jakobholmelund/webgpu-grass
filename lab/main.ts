@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b27";
+const LAB_BUILD = "b28";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -595,6 +595,12 @@ async function start() {
     picturePanel.add(s, "textureMode", { "its light and dark": "detail", "its colour": "color" }).name("it gives the leaf").onChange(changed);
     shownAs(picturePanel, s, "textureStrength", 100, 0, 100, "how much shows (%)").onChange(changed);
     picturePanel.add(s, "textureCutout").name("cut to its outline").onChange(changed);
+    // Patches: another grass come in, or this one doing worse, over part of its ground.
+    const patchPanel = folder("Patches");
+    shownAs(patchPanel, s, "patch", 100, 0, 100, "share of the ground (%)").onChange(changed);
+    shownAs(patchPanel, s, "patchSize", 100, 5, 400, "across (cm)").onChange(changed);
+    shownAs(patchPanel, s, "patchTall", 100, 30, 200, "height there (%)").onChange(changed);
+    (["red", "green", "blue"] as const).forEach((ch, i) => shownAs(patchPanel, s.patchTint, String(i), 100, 50, 160, `${ch} there (%)`).onChange(changed));
     // The ground under it: what lies there, seen between the leaves.
     const groundPanel = folder("Ground");
     shownAs(groundPanel, s, "groundDetail", 100, 0, 100, "leaves lying on it (%)").onChange(changed);

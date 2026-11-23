@@ -81,6 +81,27 @@ grass.update(renderer, camera, timeSeconds, lookAt);
   `grass.light(normal)` give it the colour and light the grass takes, so the
   two are one colour and nothing shows where the leaves thin out.
 
+## Where its light and wind come from
+
+- **Light lost in the stand.** Roots are as dark as exp(-K L) makes them
+  (Monsi and Saeki), with the leaf area index from measured mown turf (Lee
+  et al. 2011) and K from the sun's height (Campbell and Norman 1998).
+  `look.depth` sets how far that is followed over a species' own
+  `rootShade`; it is half by default, by eye.
+- **A leaf's shine** is white, Fresnel-weighted and narrower along the leaf
+  than across (roughness 0.18 and 0.46, from wheat leaves: Comar et al.).
+  **Light through it** follows Barre-Brisebois and Bouchard (GDC 2011).
+- **Wind.** A two-scale gust field scrolled downwind, as Sucker Punch
+  describe for Ghost of Tsushima (GDC 2021), which also pales the far
+  ground; over it every leaf swings in a small figure of eight, which
+  Guerrilla found is most of what reads as wind (Sanders, GDC 2018).
+- **Patches.** A species can have part of its ground in patches of another
+  colour and height (`patch`, `patchSize`, `patchTint`, `patchTall`):
+  annual meadow-grass in a bent green, green left in a parched lawn. They
+  are a tint and a height, not other plants: no clover leaf is drawn.
+
+No source gave leaf colours species against species, so those are by eye.
+
 ## What it does not do yet
 
 - **Light.** Leaves are unlit materials, coloured in the compute pass by a
