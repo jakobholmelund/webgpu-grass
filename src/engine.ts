@@ -174,6 +174,14 @@ const LEAF_IN_SHADE = 0.5;
 /** Grass shorter than the first (m) does not swing in the wind at all; grass as tall as the second swings freely. */
 const SWING_FROM_M = 0.045;
 const SWING_FULL_M = 0.11;
+/**
+ * The most a leaf's shine adds to its colour (of white, 1 being the sun's light full on a white card). A leaf's
+ * glint can be far brighter than this in life; but a host that blooms what is bright (as a game's picture often
+ * does) makes a lamp of every glint, and a field of swaying leaves flashes.
+ */
+const LEAF_SHINE_MOST = 0.3;
+/** No leaf is given a colour brighter than this, whatever `look.brightest` says: past it something has gone wrong. */
+const LEAF_BRIGHT_MOST = 4;
 /** A leaf this many pixels broad in the picture shows its shine as narrow as it is; a narrower leaf shows it spread out. */
 const SHINE_FULL_PIXELS = 6;
 /** A leaf this many pixels broad in the picture begins to show its own surface (its halves, rib and edges); at two and a half times this, all of it. */
@@ -293,6 +301,8 @@ export interface Grass {
    * `macro`: how much the colour drifts over tens of metres. `edgeWobble`:
    * how far (m) a border strays from the map's cells. `leafShadows`: whether the leaves about the eye shadow each other and the ground (they are
    * drawn once more each frame, from the sun: it costs about as much again as drawing them).
+   * `brightest`: no leaf is drawn brighter than this (a host that blooms what is bright sets it
+   * under its threshold, or a back-lit leaf is a lamp).
    * `site`: how far the grass's colour follows the lie of the ground, lusher in the hollows
    * and paler on the crowns (it needs the map's `bounds`; patches follow it by each species' `patchSite`).
    * `mown`: whether the field is mown in stripes at all (`GrassOptions.mow` says how): off, no
@@ -313,7 +323,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -433,7 +443,7 @@ export function createGrass(options: GrassOptions): Grass {
       const d = length(rel);
       // (The nest it has pressed.)
       const clear = thingHow[i].x;
-      t = t.mul(mix(float(1), smoothstep(clear.mul(0.65), clear.mul(1.15), d), step(float(1e-4), clear).mul(there)));
+      t = t.mul(mix(float(1), smoothstep(clear.mul(0.65), max(clear.mul(1.15), float(1e-4)), d), step(float(1e-4), clear).mul(there)));
       // (Under it: no taller than its underside there.)
       const under = max(c.y.sub(pow(max(r.mul(r).sub(d.mul(d)), float(0)), float(0.5))).sub(gy).sub(0.002), float(0));
       t = mix(t, min(t, under), step(d, r).mul(there));
@@ -450,7 +460,7 @@ export function createGrass(options: GrassOptions): Grass {
       // (Every plant in the lane, each to somewhere under the line: at a sward's density one plant in ten
       // left standing is leaf enough to hide a ball. And a wider lane through taller grass, whose leaves hang in from the sides.)
       const laneWide = mix(float(THING_LANE), float(THING_LANE_TALL), smoothstep(float(0.06), float(0.15), tall));
-      const lane = float(1).sub(smoothstep(r.mul(laneWide).mul(0.8), r.mul(laneWide).mul(1.7), aside)).mul(step(float(0), toward)).mul(step(float(1e-4), share)).mul(there);
+      const lane = float(1).sub(smoothstep(r.mul(laneWide).mul(0.8), max(r.mul(laneWide).mul(1.7), float(1e-4)), aside)).mul(step(float(0), toward)).mul(step(float(1e-4), share)).mul(there);
       t = mix(t, min(t, sight.mul(mix(float(0.6), float(1), luck))), lane);
     }
     return t;
@@ -473,7 +483,7 @@ export function createGrass(options: GrassOptions): Grass {
     let f = float(1) as THREE.Node<"float">;
     for (let i = 0; i < MAX_THINGS; i++) {
       const c = thingAt[i];
-      f = f.mul(mix(float(1), smoothstep(c.w.mul(1.6), c.w.mul(6), distance(at, vec3(c.x, c.y, c.z))), step(float(1e-5), c.w)));
+      f = f.mul(mix(float(1), smoothstep(c.w.mul(1.6), max(c.w.mul(6), float(1e-4)), distance(at, vec3(c.x, c.y, c.z))), step(float(1e-5), c.w)));
     }
     return f;
   };
@@ -540,6 +550,7 @@ export function createGrass(options: GrassOptions): Grass {
   const uLight = uniform(0.5);
   /** How far the grass's colour follows the lie of the ground (`look.site`). */
   const uSite = uniform(0.5);
+  const uBrightest = uniform(4);
   /** fold, relief, leafPixels. */
   const uDetail = uniform(new THREE.Vector3(1, 1, 1));
   const bare = new THREE.Color("#8a7355");
@@ -1251,9 +1262,12 @@ export function createGrass(options: GrassOptions): Grass {
       const along = dot(runAll, halfway).div(roughAlong);
       const across = dot(side, halfway).div(roughAcross);
       const lobe = exp(along.mul(along).add(across.mul(across)).div(offFace.mul(offFace)).negate()).mul(float(0.18 * 0.46).div(roughAlong.mul(roughAcross)));
-      const glance = float(0.04).add(float(0.96).mul(pow(float(1).sub(max(dot(V, halfway), float(0))), float(5))));
-      const gloss = min(lobe.mul(glance).mul(1.6), float(0.6)).mul(sheenAmt).mul(gPos.y).mul(float(1).sub(calm));
-      leafCol = plain.mul(turned).mul(own).add(colLit.mul(vec3(1.25, 1.4, 0.05)).mul(through).mul(0.7)).add(vec3(1, 1, 1).mul(dot(uSunTint, vec3(0.3, 0.5, 0.2))).mul(gloss));
+      const glance = float(0.04).add(float(0.96).mul(pow(clamp(float(1).sub(dot(V, halfway)), float(0), float(1)), float(5))));
+      const gloss = min(lobe.mul(glance).mul(1.6), float(LEAF_SHINE_MOST)).mul(sheenAmt).mul(gPos.y).mul(float(1).sub(calm));
+      // (In place of the sun off its face, not on top of it: a leaf seen from its far side shows the light
+      // through it and not the light it sends back the other way. Added together a back-lit leaf was twice
+      // as bright as any leaf is, and a picture that blooms what is bright made a lamp of it.)
+      leafCol = mix(plain.mul(turned).mul(own), colLit.mul(vec3(1.25, 1.4, 0.05)), through.mul(0.7)).add(vec3(1, 1, 1).mul(dot(uSunTint, vec3(0.3, 0.5, 0.2))).mul(gloss));
     } else {
       // (A tuft's foot is less dark than a leaf's root: tufts stand a hand apart, with nothing in front
       // to hide their feet as a sward's own leaves hide its roots, and a field of dark feet is a dark band
@@ -1262,7 +1276,8 @@ export function createGrass(options: GrassOptions): Grass {
       // Light through the leaf, towards the sun.
       const backSun = pow(max(dot(V.negate(), uSun), float(0)), float(3));
       const litGate = clamp(dot(colLit, vec3(0.3, 0.5, 0.2)).mul(2.8), float(0.28), float(1.0));
-      const back = plain.add(uSunTint.mul(backSun).mul(0.3).mul(gPos.y).mul(gPos.y).mul(litGate));
+      // (The leaf's own colour without its blue, as what comes through a leaf is: white light added to a tip is frost on a far field.)
+      const back = plain.add(plain.mul(vec3(1.25, 1.4, 0.05)).mul(backSun).mul(0.6).mul(gPos.y).mul(gPos.y).mul(litGate));
       // A leaf is folded along its rib: one half takes the light and the
       // other turns from it. And it is waxy: where it bends over towards the
       // sun's reflection it catches the light, most at the arch near its tip.
@@ -1318,7 +1333,9 @@ export function createGrass(options: GrassOptions): Grass {
     // What is drawn on the leaf itself, pixel by pixel, when it is broad enough in the picture to show it
     // (see `leafMaterial`): how many pixels broad it is there, and how far its face is turned side-on to the sun.
     const pixelsBroad = o.field ? width.mul(2).div(max(dist.mul(uPixel), float(1e-6))).mul(float(1).sub(flat)).mul(float(1).sub(uFromSun)) : float(40).mul(float(1).sub(flat));
-    return { pos: worldPos, col, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout), surface: vec2(pixelsBroad, dot(side, uSun)) };
+    // (Nothing brighter than light itself, and never not a number: one such leaf in a picture that blooms what is bright is a lamp.)
+    const colSafe = min(max(col, vec3(0)), vec3(LEAF_BRIGHT_MOST));
+    return { pos: worldPos, col: colSafe, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout), surface: vec2(pixelsBroad, dot(side, uSun)) };
   };
 
   /** The leaves' material: unlit (the colour is worked out in `leaf`), the scene's fog applied. */
@@ -1346,7 +1363,9 @@ export function createGrass(options: GrassOptions): Grass {
     const rim = outTo.mul(outTo).mul(outTo).mul(LEAF_RIM);
     const veins = cos(vUv.x.mul(6.2832 * LEAF_VEINS)).mul(0.5).add(0.5).mul(LEAF_VEIN);
     const surface = float(1).add(halves.sub(rib).sub(rim).mul(shown)).sub(veins.mul(veinsShown));
-    mat.colorNode = vec4(vCol.mul(surface).mul(mix(vec3(1), min(vec3(texel.x, texel.y, texel.z).div(vec3(vAgainst.x, vAgainst.y, vAgainst.z)), vec3(4)), vUv.w)), 1);
+    // (No brighter than the host allows, `look.brightest`: by its brightest channel, so a leaf held back keeps its colour.)
+    const drawn = vCol.mul(surface).mul(mix(vec3(1), min(vec3(texel.x, texel.y, texel.z).div(vec3(vAgainst.x, vAgainst.y, vAgainst.z)), vec3(4)), vUv.w));
+    mat.colorNode = vec4(drawn.mul(min(float(1), uBrightest.div(max(max(drawn.x, drawn.y), max(drawn.z, float(1e-4)))))), 1);
     mat.maskNode = vAgainst.w.lessThan(0.5).or(texel.w.greaterThan(0.5));
     if (o.fine && o.field) {
       // (Where the picture has several samples to a pixel, a share of them is the leaf: a far leaf thins out and does not fatten.)
@@ -1825,7 +1844,7 @@ export function createGrass(options: GrassOptions): Grass {
   repack();
   const style = { broad: 0, flat: 0 };
   let frame = 0;
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, bare };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const shadowAt = new THREE.Vector3();
@@ -1912,6 +1931,7 @@ export function createGrass(options: GrassOptions): Grass {
       uStripes.value = look.stripes;
       uMown.value = look.mown ? 1 : 0;
       uSite.value = look.site;
+      uBrightest.value = look.brightest;
       uShade.value.set(look.shadow, look.occlusion);
       uDetail.value.set(look.fold, look.relief, look.leafPixels);
       uLight.value = look.depth;
