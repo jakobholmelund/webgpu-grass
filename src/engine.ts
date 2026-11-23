@@ -469,29 +469,51 @@ export function createGrass(options: GrassOptions): Grass {
     // (All the colonies there could be cover about a quarter of the ground: for a larger share they are wider.)
     const often = clamp(share.div(0.24), float(0), float(1)).mul(drift.mul(1.5).add(0.15));
     const wider = max(float(1), pow(share.div(0.24), float(0.5)));
-    const colonies = (cellM: THREE.Node<"float">, salt: number): THREE.Node<"float"> => {
-      const g = at.div(cellM);
+    // (The plants at a colony's edge: a grain a leaf or two wide, by which the edge is ragged and not drawn.)
+    const grain = noise(xz.div(size.mul(1.1)).add(0.23)).b;
+    /**
+     * The colonies of one size of square: how much the place is in one (x), and how near it is to one,
+     * out to twice its breadth (y), which is where its seedlings come up.
+     */
+    const colonies = (cellM: THREE.Node<"float">, salt: number, often1: THREE.Node<"float">, least: number, most1: number): Vec2 => {
+      // (No colony is round: it got on better one way than another. The place is measured from where a
+      // noise as wide as the colonies puts it, so each has its own bays and lobes.)
+      const lobes = noise(turn(xz, 0.719, 0.695).div(cellM.mul(2.6)).add(salt * 0.01));
+      const g = at.add(vec2(lobes.r, lobes.a).sub(0.5).mul(cellM).mul(0.42)).div(cellM);
       const home = floor(g);
       const f = g.sub(home);
       // (A colony reaches at most a fifth of a square beyond its own, never three quarters of one, so the four squares nearest the place are all that can hold one that reaches it.)
       const side = vec2(step(float(0.5), f.x).mul(2).sub(1), step(float(0.5), f.y).mul(2).sub(1));
-      let most = float(0) as THREE.Node<"float">;
+      let core = float(0) as THREE.Node<"float">;
+      let near = float(0) as THREE.Node<"float">;
       for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
         const cell = home.add(vec2(side.x.mul(ox), side.y.mul(oy)));
         const key = cell.add(salt);
         const centre = cell.add(vec2(hashCell(key), hashCell(key.add(17.3))).mul(0.5).add(0.25));
         const small = hashCell(key.add(41.7));
-        const reach = min(mix(float(0.1), float(0.45), small.mul(small)).mul(wider), float(0.74));
-        const there = step(hashCell(key.add(73.1)), often);
-        const away = length(g.sub(centre));
-        // (A colony is one plant's offspring: alike all through, with an edge a few leaves wide, and each a
-        // little more or less unlike the stand than the next.)
+        const reach = min(mix(float(least), float(most1), small.mul(small)).mul(wider), float(0.74));
+        const there = step(hashCell(key.add(73.1)), often1);
+        // (And longer one way than the other, each its own way: up to half as long again.)
+        const lie = hashCell(key.add(151.3)).mul(3.1416);
+        const off = g.sub(centre);
+        const along = off.x.mul(cos(lie)).add(off.y.mul(sin(lie)));
+        const across = off.y.mul(cos(lie)).sub(off.x.mul(sin(lie)));
+        const longer = mix(float(1), float(1.5), hashCell(key.add(197.9)));
+        const away = length(vec2(along.div(longer), across)).div(reach);
+        // (A colony is one plant's offspring: alike all through, each a little more or less unlike the
+        // stand than the next. Its edge is its outermost plants: in or out by the grain, over a tenth of its breadth.)
         const unlike = mix(float(0.45), float(1), hashCell(key.add(113.9)));
-        most = max(most, there.mul(unlike).mul(float(1).sub(smoothstep(reach.mul(0.78), reach, away))));
+        const inside = smoothstep(float(-0.06), float(0.06), float(0.9).sub(away).add(grain.sub(0.5).mul(0.3)));
+        core = max(core, there.mul(unlike).mul(inside));
+        near = max(near, there.mul(float(1).sub(smoothstep(float(0.8), float(2.2), away))));
       }
-      return most;
+      return vec2(core, near);
     };
-    const grown = max(colonies(size.mul(2.2), 3.7), colonies(size.mul(6.3), 91.3)).mul(mix(float(0.85), float(1), fray.r));
+    const large = colonies(size.mul(6.3), 91.3, often, 0.1, 0.45);
+    const middling = colonies(size.mul(2.2), 3.7, often, 0.1, 0.45);
+    // (Seedlings: small ones, a hand or two across, thick about the colonies they came from and few elsewhere.)
+    const seedlings = colonies(size.mul(0.7), 47.1, often.mul(float(0.12).add(max(large.y, middling.y).mul(1.1))), 0.12, 0.34);
+    const grown = max(max(large.x, middling.x), seedlings.x.mul(0.85)).mul(mix(float(0.82), float(1), fray.r));
     // Blotches are the other kind: not something that grew, but the ground showing through the grass, so
     // they have no centres and no edges. Three lookups of the noise, turned and of unrelated sizes (one
     // alone is the same four shapes in rows), cut where the species' share of the ground lies above.
