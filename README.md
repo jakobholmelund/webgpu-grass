@@ -252,8 +252,9 @@ the fields made for you.
   distance fields) still wants a source of its own.
 - **Height across a border.** Each stand is full height up to its line; the
   game raises rough out of semi-rough over a stride.
-- **Things in the grass.** Nothing presses it down: no feet, no ball, no
-  trail.
+- **Things in the grass.** A ball, feet and a trail press it (see "Things
+  in the grass"), but nothing in it casts a shadow on it, and a dew track,
+  dark through pale, is not drawn.
 - **Mowing beyond straight passes.** `mowStripes` is passes side by side,
   there and back. A species says how far the mower lays it over
   (`Species.lay`); laid grass leans that way, and it and the ground under it
@@ -326,8 +327,9 @@ the fields made for you.
   a half up. Lower, the host must aim them at the foreground (`lookAt`), as
   the lab does; inside grass taller than the eye it is a thicket of broad
   leaves.
-- **The game.** The game still draws its own grass. Nothing here is used by
-  it.
+- **The game.** Couch Golf Club draws its grass with this on its WebGPU
+  renderer, pinned to a commit. Its standard renderer, and phones, still
+  draw the game's own.
 
 `STARTER_SPECIES` are the game's surfaces turned into rows, and a hay
 meadow. `TURF_SPECIES`, which the lab starts from, are a golf course's eight surfaces
