@@ -447,10 +447,21 @@ export function createGrass(options: GrassOptions): Grass {
   const inPatch = (xz: Vec2, k: THREE.Node<"int">): THREE.Node<"float"> => {
     const share = row(k, 10).w;
     const size = row(k, 8).z;
-    const lumps = noise(xz.div(size.mul(4)).add(0.37)).r.mul(0.65).add(noise(xz.div(size.mul(1.3)).add(0.81)).g.mul(0.35));
-    // (The noise is mostly near its middle: the cut runs from 0.72 for a little of the ground to 0.28 for most of it.)
-    const cut = mix(float(0.72), float(0.28), share);
-    return smoothstep(cut.sub(0.03), cut.add(0.03), lumps).mul(step(float(0.005), share));
+    // (The noise repeats: one lookup of it is the same four patches over and over, in rows. So three are
+    // taken, each turned and of a size that shares no measure with the others': one as wide as a patch,
+    // pushed about by the next, which is some two patches wide, and one six wide that gathers the patches
+    // into drifts. A finer one frays their edges.)
+    const turn = (v: Vec2, c: number, sn: number) => vec2(v.x.mul(c).sub(v.y.mul(sn)), v.x.mul(sn).add(v.y.mul(c)));
+    const wide = noise(turn(xz, 0.814, 0.581).div(size.mul(9.48)).add(vec2(0.13, 0.71)));
+    const drift = noise(turn(xz, 0.454, -0.891).div(size.mul(24.4)).add(vec2(0.57, 0.29))).r;
+    const pushed = xz.add(vec2(wide.r, wide.a).sub(0.5).mul(size).mul(2.2));
+    const one = noise(pushed.div(size.mul(4)).add(0.37)).r;
+    const fray = noise(turn(pushed, 0.921, 0.391).div(size.mul(7.3)).add(0.81)).g;
+    const lumps = one.mul(0.4).add(wide.r.mul(0.26)).add(drift.mul(0.22)).add(fray.mul(0.12));
+    // (The sum is mostly near its middle: the cut runs from 0.64 for a little of the ground to 0.36 for most of it.)
+    const cut = mix(float(0.64), float(0.36), share);
+    // (A patch is thick at its middle and thins out to nothing, and is mottled all through: it has no shore.)
+    return smoothstep(cut.sub(0.07), cut.add(0.1), lumps).mul(mix(float(0.55), float(1), smoothstep(float(0.3), float(0.7), fray))).mul(step(float(0.005), share));
   };
   /** A place's colour for being in a patch or not, as a multiplier. */
   const patchTint = (xz: Vec2, k: THREE.Node<"int">): Vec3 => mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), inPatch(xz, k));
