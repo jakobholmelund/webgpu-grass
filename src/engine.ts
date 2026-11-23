@@ -243,8 +243,15 @@ const STAND_SUN = 0.65;
  */
 const LEAF_REACH = 1.4;
 const LEAF_AHEAD = 0.45;
-/** How much paler grass is under a gust than out of one, at a wind of 8 m/s: laid-over leaves show their undersides. */
-const GUST_PALE = 0.3;
+/**
+ * How much a far tuft's brightness follows the way it is laid over: a leaf laid towards the sun shows it
+ * more of its face and one laid from it less, by this much of the change in how squarely the sun meets it,
+ * and never by more than `LAID_LIT_MOST` either way. This is all a gust does to the look of far grass:
+ * nothing is painted on it. (A painted patch of paler grass travelling downwind was an overlay, with
+ * the grass under it standing still: it read as cloud shadow, not wind.)
+ */
+const LAID_LIT = 0.6;
+const LAID_LIT_MOST = 0.16;
 /** A crown is ground that stands this much (m) above the mean of the ground this far (m) round it; a hollow lies this much below the mean further round. */
 const SITE_NEAR_M = 2.5;
 const SITE_NEAR_RISE = 0.05;
@@ -1145,14 +1152,9 @@ export function createGrass(options: GrassOptions): Grass {
     // (A stand in seed is paler for its heads, which is most of what is seen of it from any way off.)
     const heads = row(k, 6);
     const inSeed = mix(vec3(1), vec3(heads.x, heads.y, heads.z), row(k, 2).z.mul(0.5));
-    // The wind shows on the far ground as it does on the leaves: where a gust lies the grass over it turns
-    // its paler side up, and the patches travel downwind to the horizon (the same field the leaves lean by:
-    // see the compute pass). Only where the ground stands in for the leaves, and for grass the wind can move.
-    const wDir = normalize(vec2(uWind.x, uWind.y).add(vec2(1e-4, 0)));
-    const gustAt = xz.sub(wDir.mul(uTime.mul(float(1.2).add(uWind.z.mul(0.55)))));
-    const gustIs = smoothstep(float(0.3), float(0.72), noise(gustAt.div(61.0)).r.mul(0.68).add(noise(gustAt.mul(1.35).div(19.0).add(0.43)).g.mul(0.32)));
-    const windTakes = min(smoothstep(float(0.075), float(0.17), row(k, 0).x).mul(float(1).sub(row(k, 2).w)).mul(1.4), float(1));
-    const blown = float(1).add(gustIs.sub(0.5).mul(windTakes).mul(clamp(uWind.z.div(8.0), float(0), float(1.7))).mul(far).mul(GUST_PALE));
+    // (No gust is painted on the far ground: the wind is seen where there are leaves to move, and ground
+    // that stands in for leaves too far off to draw is still, as they would seem from there.)
+    const blown = float(1);
     // (Looking towards the sun the leaves glow with the light through them, and the ground that stands
     // for them further off glows as they do, or a dull band lies where the leaves stop: a leaf's glow,
     // averaged over its length and the ways it faces.)
@@ -1277,7 +1279,6 @@ export function createGrass(options: GrassOptions): Grass {
     const onRib = step(float(1e-6), ribBack0);
     const foldBy = uDetail.x.mul(FOLD_ANGLE);
     const tall = st.z;
-    const gustHere = st.w;
     const k = int(sh.x.add(0.5));
     const stand = row(k, 0);
     const blade = row(k, 1);
@@ -1497,8 +1498,11 @@ export function createGrass(options: GrassOptions): Grass {
       const leafUp = normalize(vec3(lean2.x.mul(bendPow).mul(-1.2), float(1), lean2.y.mul(bendPow).mul(-1.2)).add(vec3(toCam.x, 0, toCam.y).mul(0.35)));
       const sheen = pow(max(dot(leafUp, normalize(uSun.add(V))), float(0)), float(14)).mul(gPos.y).mul(litGate).mul(sheenAmt).mul(float(1).sub(flat));
       const fold = float(1);
-      // (A gust shows as a paler patch crossing the grass: laid-over blades turn their backs to the sky.)
-      const near = back.mul(fold).add(uSunTint.mul(sheen).mul(0.06)).add(back.mul(GUST_PALE).mul(gustHere).mul(clamp(uWind.z.div(8.0), float(0), float(1.7))).mul(mix(gPos.y, float(1), toGround)));
+      // (A gust shows in the tuft itself: laid over, its leaves meet the sun more squarely or less, and are
+      // that much lighter or darker, most at their tips and not at all where the tufts give way to the ground.)
+      const laidFace = normalize(vec3(lean2.x.negate(), float(1), lean2.y.negate()));
+      const laidLit = float(1).add(clamp(dot(laidFace, uSun).sub(uSun.y).mul(LAID_LIT), float(-LAID_LIT_MOST), float(LAID_LIT_MOST)).mul(gPos.y).mul(float(1).sub(toGround)).mul(float(1).sub(flat)));
+      const near = back.mul(fold).mul(laidLit).add(uSunTint.mul(sheen).mul(0.06));
       // (The ground a stand in seed gives way to is paler for its heads: see `groundColor`.)
       leafCol = mix(near, colLit.mul(mix(rootIs, float(1), STAND_MEAN)).mul(mix(vec3(1), vec3(seedTint.x, seedTint.y, seedTint.z), seed.mul(0.5))), toGround);
     }
