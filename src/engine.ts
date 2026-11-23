@@ -375,6 +375,14 @@ export interface Grass {
    * where the leaves thin out there is nothing to see.
    */
   groundColor(xz: Vec2): Vec3;
+  /**
+   * For a host whose ground has its own colour: what the grass standing at a place does to it, as
+   * what to multiply that colour by. Dark where the eye sees down between the leaves and the stand's
+   * own mean where it stands in for leaves too far off to draw, the stand's picture and its relief,
+   * its patches, the mower's stripes, the gusts, the grass's own shade. None of the world's light
+   * (`GrassOptions.world`), which is the host's to put on its ground itself. In a fragment shader.
+   */
+  groundShade(xz: Vec2): Vec3;
   /** The light a leaf takes on ground with this normal, for the same reason. */
   light(normal: Vec3): Vec3;
   /** Plants computed each frame, and the most leaves they can stand up as. */
@@ -741,7 +749,7 @@ export function createGrass(options: GrassOptions): Grass {
    * there stands above the ray. Soft, and never black: a stand of grass is
    * not a wall.
    */
-  const sunReach = (xz: Vec2, up: THREE.Node<"float">): THREE.Node<"float"> => {
+  const sunReach = (xz: Vec2, up: THREE.Node<"float">, world = true): THREE.Node<"float"> => {
     const flat = vec2(uSun.x, uSun.z);
     const across = max(length(flat), float(0.05));
     const to = flat.div(across);
@@ -751,13 +759,13 @@ export function createGrass(options: GrassOptions): Grass {
       const over = canopyAt(xz.add(to.mul(far))).sub(up.add(rise.mul(far)));
       lit = min(lit, float(1).sub(smoothstep(float(0), float(0.015 + far * 0.1), over)));
     }
-    return mix(float(1), lit, uShade.x).mul(options.world?.sun ? clamp(options.world.sun(xz), float(0), float(1)) : float(1));
+    return mix(float(1), lit, uShade.x).mul(world && options.world?.sun ? clamp(options.world.sun(xz), float(0), float(1)) : float(1));
   };
   /** How much of the sky a point sees, 0..1: less beside taller grass, whichever way the sun is. */
-  const skyOpen = (xz: Vec2, up: THREE.Node<"float">): THREE.Node<"float"> => {
+  const skyOpen = (xz: Vec2, up: THREE.Node<"float">, world = true): THREE.Node<"float"> => {
     let shut = float(0) as THREE.Node<"float">;
     for (const [dx, dz] of [[0.18, 0], [-0.18, 0], [0, 0.18], [0, -0.18]]) shut = shut.add(clamp(canopyAt(xz.add(vec2(dx, dz))).sub(up).div(0.27), float(0), float(1)));
-    return float(1).sub(shut.mul(0.25).mul(uShade.y)).mul(options.world?.sky ? clamp(options.world.sky(xz), float(0), float(1)) : float(1));
+    return float(1).sub(shut.mul(0.25).mul(uShade.y)).mul(world && options.world?.sky ? clamp(options.world.sky(xz), float(0), float(1)) : float(1));
   };
   /** What a leaf or the ground is lit by where the sun does not reach it: the sky's light alone. */
   const inShade = () => uShadeTint.div(mix(uShadeTint, uSunTint, 0.62));
@@ -896,7 +904,7 @@ export function createGrass(options: GrassOptions): Grass {
     return float(1).sub(gone).mul(leafSeen(wide, away));
   };
 
-  const groundColor = (xz: Vec2): Vec3 => {
+  const ground = (xz: Vec2, forHost: boolean): Vec3 => {
     const m = lookup(xz);
     const alive = step(m.species, float(MAX_SPECIES - 0.5));
     const k = int(min(m.species, float(MAX_SPECIES - 1)));
@@ -933,7 +941,8 @@ export function createGrass(options: GrassOptions): Grass {
     const which = smoothstep(float(0.35), float(0.65), noise(xz.div(5.3).add(0.71)).g);
     const toEye = vec3(uCamPos.x.sub(xz.x), uEyeUp, uCamPos.z.sub(xz.y));
     const eyeAway = length(toEye);
-    const shows = picture.x.mul(float(1).sub(smoothstep(float(6), float(20), eyeAway)));
+    // (And not before the picture is made: until then its mean is nothing, and a colour over nothing is not a number.)
+    const shows = picture.x.mul(float(1).sub(smoothstep(float(6), float(20), eyeAway))).mul(step(float(1e-4), mean.y));
     // Relief. The picture carries, beside its colour, how high what is in it stands (0..1 of `PILE_TALL`
     // leaf heights: its alpha). Two things are made of that, both scaled by `relief`:
     //  - the picture is looked up where the line of sight meets that height and not where it meets the
@@ -954,7 +963,7 @@ export function createGrass(options: GrassOptions): Grass {
       // (Metres risen per metre towards the sun.)
       const climb = sunward.sub(texel.w).mul(pileTall).div(tileM.mul(RELIEF_STEP / GROUND_SIZE)).mul(uDetail.y);
       const lit = clamp(uSun.y.sub(climb.mul(sunFlat)).div(max(uSun.y, float(0.15)).mul(pow(climb.mul(climb).add(1), float(0.5)))), float(0.6), float(1.15));
-      return min(vec3(texel.x, texel.y, texel.z).div(vec3(mean.x, mean.y, mean.z)), vec3(3)).mul(lit);
+      return min(vec3(texel.x, texel.y, texel.z).div(max(vec3(mean.x, mean.y, mean.z), vec3(1e-4))), vec3(3)).mul(lit);
     };
     const lying = mix(vec3(1), mix(
       pileAt(xz.div(picture.y), picture.y, sightRun, sunAlong),
@@ -980,8 +989,14 @@ export function createGrass(options: GrassOptions): Grass {
     // (Bare ground is shaded as grown ground is: a path beside tall grass lies in its shadow.)
     const onGround = leafShadow(positionWorld, row(k, 0).x, row(k, 1).x);
     const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), mix(onGround.w, onGround.x, onGround.z)), onGround.y);
-    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
+    // What the stand does to the ground's colour, apart from what colour that is.
+    const stand = vec3(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow);
+    // (For a host with its own ground: that alone, with the grass's own shade and none of the world's, which is the host's to put on its ground itself.)
+    if (forHost) return mix(vec3(1), stand, alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor, false))).mul(skyOpen(xz, standsFor, false));
+    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(stand), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
   };
+  const groundColor = (xz: Vec2): Vec3 => ground(xz, false);
+  const groundShade = (xz: Vec2): Vec3 => ground(xz, true);
 
   const geometries: THREE.BufferGeometry[] = [];
   const materials: THREE.Material[] = [];
@@ -2020,6 +2035,7 @@ export function createGrass(options: GrassOptions): Grass {
     },
     show: shown,
     groundColor,
+    groundShade,
     light,
     stats: { plants: all.reduce((n, l) => n + l.total, 0), leaves: all.reduce((n, l) => n + l.leaves, 0) },
     dispose() {

@@ -126,7 +126,11 @@ async function start() {
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeVertexNormals();
     const mat = new THREE.MeshBasicNodeMaterial();
-    mat.colorNode = vec4(grass.groundColor(vec2(positionWorld.x, positionWorld.z)).mul(grass.light(normalWorld)), 1);
+    // (`?hostground`: as a host with its own ground would have it, one flat colour of the host's with the stand's shading over it: `groundShade`.)
+    const at = vec2(positionWorld.x, positionWorld.z);
+    mat.colorNode = new URLSearchParams(location.search).has("hostground")
+      ? vec4(vec3(0.1, 0.19, 0.05).mul(grass.groundShade(at)).mul(grass.light(normalWorld)), 1)
+      : vec4(grass.groundColor(at).mul(grass.light(normalWorld)), 1);
     ground = new THREE.Mesh(geo, mat);
     scene.add(ground);
   }
