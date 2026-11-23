@@ -133,6 +133,12 @@ const LEAF_IN_SHADE = 0.5;
 /** Grass shorter than the first (m) does not swing in the wind at all; grass as tall as the second swings freely. */
 const SWING_FROM_M = 0.045;
 const SWING_FULL_M = 0.11;
+/** A leaf this many pixels broad in the picture shows its shine as narrow as it is; a narrower leaf shows it spread out. */
+const SHINE_FULL_PIXELS = 6;
+/** The leaves' swing runs downwind in waves this long (m). */
+const SWING_WAVE_M = 1.8;
+/** How far (radians of its swing, either way) a leaf is out of step with those about it. */
+const SWING_OWN_RAD = 0.9;
 /** How long a dead leaf is beside a live one of the same plant. */
 const DEAD_LEAF_TALL = 0.62;
 /** A dead leaf: straw. */
@@ -316,6 +322,10 @@ export function createGrass(options: GrassOptions): Grass {
   const SHADOW_DEEP_M = 60;
   /** Only the squares of leaves that reach no further than this (m) are drawn into it: the two nearest. */
   const SHADOW_NEAR_RANGE_M = 2;
+  /** The widest square of leaves that is drawn into the shadow picture reaches this far (m, its `range`). */
+  const SHADOW_CAST_RANGE_M = Math.max(...layers.near.map((l) => l.range).filter((r) => r < SHADOW_NEAR_RANGE_M));
+  /** A point goes from lit to shadowed over this much depth (m) behind what shadows it. */
+  const SHADOW_SOFT_M = 0.012;
   const shadowTargets = [0, 1].map(() => {
     const t = new THREE.RenderTarget(SHADOW_SIZE, SHADOW_SIZE, { depthBuffer: true });
     t.depthTexture = new THREE.DepthTexture(SHADOW_SIZE, SHADOW_SIZE);
@@ -325,19 +335,27 @@ export function createGrass(options: GrassOptions): Grass {
   const shadowNodes: THREE.TextureNode[] = [];
   const uSunMat = uniform(new THREE.Matrix4());
   const uShadowOn = uniform(0);
+  /** 1 while the leaves are being drawn from the sun: they are then the leaves the eye sees (as broad, turned the same way), not leaves made for a camera where the sun is. */
+  const uFromSun = uniform(0);
   const sunCam = new THREE.OrthographicCamera(-SHADOW_HALF_M, SHADOW_HALF_M, SHADOW_HALF_M, -SHADOW_HALF_M, 0.1, SHADOW_DEEP_M);
   /**
    * Whether the sun reaches a point past the leaves about it (x: 1 it does, 0 it does not), how far that
    * is known (y: 0 outside the picture), how far the picture can tell the leaves of a stand `stands` tall
    * apart (z), and whether the sun reaches the point past everything taller than that stand (w).
    */
-  const leafShadow = (at: Vec3, stands: THREE.Node<"float">): Vec4 => {
+  const leafShadow = (at: Vec3, stands: THREE.Node<"float">, broad: THREE.Node<"float">): Vec4 => {
     const clip = uSunMat.mul(vec4(at, 1));
     const inPicture = vec2(clip.x.mul(0.5).add(0.5), clip.y.mul(-0.5).add(0.5));
     const node = texture(shadowTargets[0].depthTexture!, inPicture).level(float(0));
     shadowNodes.push(node as unknown as THREE.TextureNode);
     const nearest = (node as unknown as Vec4).x;
-    const known = float(1).sub(smoothstep(float(0.8), float(0.98), max(abs(clip.x), abs(clip.y)))).mul(uShadowOn);
+    // (Known only as far as the leaves that are drawn into the picture go: they thin out away from the eye
+    // as their square does, and past them the picture is empty, which is not the same as sunlit.)
+    const casters = leavesAt(length(vec3(at.x.sub(uCamPos.x), uEyeUp, at.z.sub(uCamPos.z))), SHADOW_CAST_RANGE_M);
+    const known = float(1).sub(smoothstep(float(0.8), float(0.98), max(abs(clip.x), abs(clip.y)))).mul(uShadowOn).mul(casters);
+    // (In shadow by degrees over a little depth, not all at once: a leaf swaying across a shadow's edge
+    // darkens as it goes in, where one that is either lit or not twinkles.)
+    const sunPast = (gap: THREE.Node<"float">) => clamp(nearest.sub(clip.z.sub(gap.div(SHADOW_DEEP_M))).div(SHADOW_SOFT_M / SHADOW_DEEP_M).add(1), float(0), float(1));
     // (The picture cannot tell apart what lies within one of its pixels, and under a low sun a pixel is a
     // long way along the ground: a pixel's breadth over the sun's slope. Leaves nearer each other than that
     // are not in each other's shadow by it, or a short sward comes out in blocks the size of the pixels.)
@@ -345,11 +363,13 @@ export function createGrass(options: GrassOptions): Grass {
     const apart = along.mul(SHADOW_PIXELS_APART * 2 * SHADOW_HALF_M / SHADOW_SIZE).add(SHADOW_BIAS_M);
     // (And a stand no taller than that reach is leaves the picture cannot tell apart at all: there the
     // picture says nothing, and each leaf is in the sun or out of it by how deep in the stand it is.)
-    const toldApart = smoothstep(float(1), float(SHADOW_PIXELS_TALL), stands.div(along.mul(2 * SHADOW_HALF_M / SHADOW_SIZE)));
+    // (Nor can it tell apart leaves narrower than its pixels: such a leaf is in the picture or not by where
+    // it happens to lie across a pixel, and as it sways its shadow comes and goes.)
+    const toldApart = smoothstep(float(1), float(SHADOW_PIXELS_TALL), stands.div(along.mul(2 * SHADOW_HALF_M / SHADOW_SIZE))).mul(smoothstep(float(0.5), float(1.1), broad.div(2 * SHADOW_HALF_M / SHADOW_SIZE)));
     // (What such a stand still takes from the picture is the shadow of anything taller beside it: whatever
     // is further up the sun's ray than the stand's own leaves could be.)
     const ownReach = stands.mul(SHADOW_OWN_REACH).div(max(uSun.y, float(0.05)));
-    return vec4(step(clip.z.sub(apart.div(SHADOW_DEEP_M)), nearest), known, toldApart, step(clip.z.sub(apart.add(ownReach).div(SHADOW_DEEP_M)), nearest));
+    return vec4(sunPast(apart), known, toldApart, sunPast(apart.add(ownReach)));
   };
   const noiseTex = makeNoiseTexture();
   const table = makeSpeciesTable();
@@ -797,7 +817,7 @@ export function createGrass(options: GrassOptions): Grass {
     const fromEye = normalize(vec3(xz.x.sub(uCamPos.x), max(uEyeUp, float(0.02)).negate(), xz.y.sub(uCamPos.z)));
     const glow = vec3(1).add(vec3(1.25, 1.4, 0.05).mul(pow(max(dot(fromEye, uSun), float(0)), float(4)).mul(0.26).mul(far).mul(smoothstep(float(0.02), float(0.1), row(k, 0).x))));
     // (Bare ground is shaded as grown ground is: a path beside tall grass lies in its shadow.)
-    const onGround = leafShadow(positionWorld, row(k, 0).x);
+    const onGround = leafShadow(positionWorld, row(k, 0).x, row(k, 1).x);
     const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), mix(onGround.w, onGround.x, onGround.z)), onGround.y);
     return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
   };
@@ -923,7 +943,9 @@ export function createGrass(options: GrassOptions): Grass {
     const flat = uStyle.y;
 
     const root = vec3(xz.x, colSt.w, xz.y);
-    const dist = distance(root, cameraPosition);
+    // (Where the leaf is seen from: the eye, also when it is the sun that draws it, for its shadow.)
+    const seenFrom = mix(cameraPosition, uCamPos, uFromSun);
+    const dist = distance(root, seenFrom);
     const gPos = positionGeometry;
     const b = gPos.z;
     const ang = r0.add(b.mul(0.381966)).mul(6.2832);
@@ -933,7 +955,7 @@ export function createGrass(options: GrassOptions): Grass {
     const footRadius = mix(float(0.02).add(rb.mul(0.16)), float(0.03).add(pow(rb, float(0.5)).mul(0.17)), isCut);
     const foot = root.add(vec3(out2.x, 0, out2.y).mul(fine ? float(0) : min(footRadius, sh.y)));
     const spinTo = hashCell(hcell.add(19.3)).mul(6.2832);
-    const toCam = o.spin ? vec2(cos(spinTo), sin(spinTo)) : normalize(vec2(cameraPosition.x.sub(foot.x), cameraPosition.z.sub(foot.z)).add(1e-4));
+    const toCam = o.spin ? vec2(cos(spinTo), sin(spinTo)) : normalize(vec2(seenFrom.x.sub(foot.x), seenFrom.z.sub(foot.z)).add(1e-4));
     // Mown grass has no tip: the mower took it. A cut leaf ends in a slant,
     // its top joint level and its tip moved out over one edge; close-mown
     // turf is cut off square, each leaf the same width all the way up, so
@@ -983,12 +1005,17 @@ export function createGrass(options: GrassOptions): Grass {
 
     // The leaf arches: upright at the root, bending over more and more towards the tip.
     const lean0 = vec2(st.x, st.y).add(out2.mul(fine ? float(0.2).add(rb.mul(0.42)) : float(0.25).add(rb.mul(0.3))).mul(blade.z));
-    // No leaf is ever still, and none only leans: each swings in a small figure of eight of its own, the
+    // In a wind no leaf is still, and none only leans: each swings in a small figure of eight, the
     // swing running up the leaf a little late towards its tip, more in a wind and less for a stiff grass.
     // (Most of what is seen of a field moving is this, and the gusts over it the rest: Sanders, GDC 2018.)
-    const swingAt = uTime.mul(float(1.3).add(uWind.z.mul(0.22))).add(hashCell(hcell.add(b.mul(5.3).add(41.0))).mul(6.2832)).sub(gy.mul(1.4));
+    // (Not each to its own beat: leaves that stand together swing together, a little out of step, and the
+    // swing runs downwind through the stand in waves a stride or two long. Each wholly to its own beat,
+    // a stand does not sway: it shimmers.)
+    const swingWave = dot(xz, vec2(uWind.x, uWind.y)).mul(-6.2832 / SWING_WAVE_M).add(sin(xz.x.mul(1.7).add(xz.y.mul(0.9))).mul(1.3)).add(sin(xz.y.mul(2.1).sub(xz.x.mul(0.6))).mul(1.1));
+    const swingAt = uTime.mul(float(1.3).add(uWind.z.mul(0.22))).add(swingWave).add(hashCell(hcell.add(b.mul(5.3).add(41.0))).sub(0.5).mul(SWING_OWN_RAD * 2)).sub(gy.mul(1.4));
+    // (And in still air nothing swings at all.)
     // (Only grass long enough to swing: mown turf up to the first cut stands still in any wind, rough hardly stirs, and from deep rough up it all goes.)
-    const swingBy = smoothstep(float(SWING_FROM_M), float(SWING_FULL_M), row(k, 0).x).mul(float(1).sub(row(k, 2).w.mul(0.75))).mul(float(0.014).add(min(uWind.z.div(8), float(1.5)).mul(0.034)));
+    const swingBy = smoothstep(float(SWING_FROM_M), float(SWING_FULL_M), row(k, 0).x).mul(float(1).sub(row(k, 2).w.mul(0.75))).mul(smoothstep(float(0), float(1.5), uWind.z).mul(0.014).add(min(uWind.z.div(8), float(1.5)).mul(0.034)));
     const lean2 = o.spin ? lean0 : lean0.add(vec2(sin(swingAt), sin(swingAt.mul(2)).mul(0.5)).mul(swingBy));
     const bendPow = fine ? gy.mul(gy) : pow(gy, float(2.1));
     // The leaf bends over in an arc, and is as long bent as straight: it leans the way of `lean2`, and
@@ -1048,7 +1075,7 @@ export function createGrass(options: GrassOptions): Grass {
       const sunGetsTo = pow(max(rootIs, float(0.02)), float(1).sub(gPos.y));
       const ownLuck = hashCell(hcell.add(b.mul(11.7).add(87.0)));
       const inSun = smoothstep(ownLuck.mul(0.9).sub(0.06), ownLuck.mul(0.9).add(0.06), sunGetsTo);
-      const shadowed = o.field ? leafShadow(worldPos, max(tall, stand.x)) : vec4(1, 0, 1, 1);
+      const shadowed = o.field ? leafShadow(worldPos, max(tall, stand.x), row(k, 1).x) : vec4(1, 0, 1, 1);
       const byDepth = mix(float(1), mix(float(0.58), float(1.14), inSun), float(1).sub(calm).mul(uLight).mul(1.4).min(1));
       const dapple = mix(byDepth, mix(byDepth.mul(mix(float(LEAF_IN_SHADE), float(1), shadowed.w)), mix(float(LEAF_IN_SHADE), float(1.1), shadowed.x), shadowed.z), shadowed.y);
       const turned = mix(mix(float(0.8), float(1.18), abs(dot(face, uSun))), float(1), calm).mul(inFold).mul(dapple);
@@ -1065,9 +1092,16 @@ export function createGrass(options: GrassOptions): Grass {
       // narrower along the leaf than across it (wheat leaves: roughness 0.18 along the veins, 0.46 across).
       const halfway = normalize(uSun.add(V));
       const offFace = max(abs(dot(face, halfway)), float(0.03));
-      const along = dot(runAll, halfway).div(0.18);
-      const across = dot(side, halfway).div(0.46);
-      const lobe = exp(along.mul(along).add(across.mul(across)).div(offFace.mul(offFace)).negate());
+      // (A leaf only a pixel or two broad in the picture cannot show a narrow shine: all the ways its
+      // face turns across that pixel, and from one frame to the next as it sways, are in the one pixel, so
+      // the shine there is the same light spread over them all: broader and as much fainter. A narrow
+      // shine on such a leaf is a white spark that comes and goes: a field of them twinkles.)
+      const broadInPicture = clamp(leafWidth.mul(2).div(max(dist.mul(uPixel), float(1e-6))).div(SHINE_FULL_PIXELS), float(0), float(1));
+      const roughAlong = mix(float(0.6), float(0.18), broadInPicture);
+      const roughAcross = mix(float(0.8), float(0.46), broadInPicture);
+      const along = dot(runAll, halfway).div(roughAlong);
+      const across = dot(side, halfway).div(roughAcross);
+      const lobe = exp(along.mul(along).add(across.mul(across)).div(offFace.mul(offFace)).negate()).mul(float(0.18 * 0.46).div(roughAlong.mul(roughAcross)));
       const glance = float(0.04).add(float(0.96).mul(pow(float(1).sub(max(dot(V, halfway), float(0))), float(5))));
       const gloss = min(lobe.mul(glance).mul(1.6), float(0.6)).mul(sheenAmt).mul(gPos.y).mul(float(1).sub(calm));
       leafCol = plain.mul(turned).mul(own).add(colLit.mul(vec3(1.25, 1.4, 0.05)).mul(through).mul(0.7)).add(vec3(1, 1, 1).mul(dot(uSunTint, vec3(0.3, 0.5, 0.2))).mul(gloss));
@@ -1327,9 +1361,11 @@ export function createGrass(options: GrassOptions): Grass {
         const gustAt = xz.sub(wDir.mul(uTime.mul(float(1.2).add(uWind.z.mul(0.55)))));
         const gustBroad = noise(gustAt.div(61.0)).r;
         const gustSmall = noise(gustAt.mul(1.35).div(19.0).add(0.43)).g;
-        const flutter = sin(uTime.mul(2.3).add(r0.mul(6.28))).mul(0.06);
+        // (A flutter on the gusts: plants that stand together flutter nearly together, as they swing.)
+        const flutter = sin(uTime.mul(2.3).add(sin(xz.x.mul(1.9).add(xz.y.mul(1.1))).mul(1.4)).add(sin(xz.y.mul(2.3).sub(xz.x.mul(0.7))).mul(1.2)).add(r0.sub(0.5).mul(SWING_OWN_RAD * 2))).mul(0.06);
         const gust = clamp(smoothstep(float(0.3), float(0.72), gustBroad.mul(0.68).add(gustSmall.mul(0.32))).add(flutter), float(0), float(1));
-        const swirl = vec2(cos(uTime.mul(1.2).add(xz.x.mul(0.28))), sin(uTime.mul(1.05).add(xz.y.mul(0.25)))).mul(0.06);
+        // (The air's slow turning about, which is there in any wind and not in none.)
+        const swirl = vec2(cos(uTime.mul(1.2).add(xz.x.mul(0.28))), sin(uTime.mul(1.05).add(xz.y.mul(0.25)))).mul(0.06).mul(smoothstep(float(0), float(1.5), uWind.z));
         // Wind moves what stands tall enough to be moved, and is not too stiff.
         const windTakes = smoothstep(float(0.075), float(0.17), tall0).mul(float(1).sub(stiffness)).mul(1.4);
         const lay = layAt(xz, k);
@@ -1623,6 +1659,8 @@ export function createGrass(options: GrassOptions): Grass {
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const shadowAt = new THREE.Vector3();
+  const shadowRight = new THREE.Vector3();
+  const shadowUp = new THREE.Vector3();
   let shadowTurn = 0;
   let shadowSkip = 0;
   const bufferSize = new THREE.Vector2();
@@ -1737,6 +1775,13 @@ export function createGrass(options: GrassOptions): Grass {
         uSunMat.value.copy(shadowMats[read]);
         uShadowOn.value = shadowTurn > 0 ? 1 : 0;
         shadowAt.set(eye.x + f.x * SHADOW_HALF_M * 0.7, eye.y - uEyeUp.value, eye.z + f.y * SHADOW_HALF_M * 0.7);
+        // (By whole pixels of the picture: moved by part of one, every shadow's edge shifts as the eye does.)
+        shadowRight.set(0, uSun.value.y > 0.95 ? 0 : 1, uSun.value.y > 0.95 ? 1 : 0).cross(uSun.value).normalize();
+        shadowUp.copy(uSun.value).cross(shadowRight).normalize();
+        const texel = (2 * SHADOW_HALF_M) / SHADOW_SIZE;
+        const offRight = shadowAt.dot(shadowRight);
+        const offUp = shadowAt.dot(shadowUp);
+        shadowAt.addScaledVector(shadowRight, Math.round(offRight / texel) * texel - offRight).addScaledVector(shadowUp, Math.round(offUp / texel) * texel - offUp);
         sunCam.position.copy(shadowAt).addScaledVector(uSun.value, SHADOW_DEEP_M * 0.5);
         sunCam.up.set(0, uSun.value.y > 0.95 ? 0 : 1, uSun.value.y > 0.95 ? 1 : 0);
         sunCam.lookAt(shadowAt);
@@ -1745,7 +1790,9 @@ export function createGrass(options: GrassOptions): Grass {
         for (const l of all) l.mesh.visible = l.mesh.visible && l.fine && l.range < SHADOW_NEAR_RANGE_M;
         const before = renderer.getRenderTarget();
         renderer.setRenderTarget(shadowTargets[write]);
+        uFromSun.value = 1;
         renderer.render(group, sunCam);
+        uFromSun.value = 0;
         renderer.setRenderTarget(before);
         all.forEach((l, i) => (l.mesh.visible = were[i]));
         shadowMats[write].multiplyMatrices(sunCam.projectionMatrix, sunCam.matrixWorldInverse);
