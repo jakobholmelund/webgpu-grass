@@ -1018,8 +1018,9 @@ export function createGrass(options: GrassOptions): Grass {
       const own = vec3(1).add(vec3(0.16, 0.04, -0.2).mul(rh.sub(0.5)).mul(min(habit.w.mul(4), float(1))).mul(float(1).sub(calm)));
       // the sun through it, seen from the far side, strongest towards its tip;
       // (Through it: seen against the sun, bent a little by the leaf's own face, and tight about the sun's
-      // direction: Barre-Brisebois and Bouchard 2011. A leaf passes about as much green as it reflects and
-      // far less red and blue, so what comes through is yellower and deeper than the leaf's own colour.)
+      // direction: Barre-Brisebois and Bouchard 2011. By PROSPECT-D a grass leaf passes about as much green
+      // as it sends back, nine tenths as much red and next to no blue: what comes through is the leaf's
+      // colour without its blue, a yellower and deeper green.)
       const through = pow(max(dot(V.negate(), normalize(uSun.add(face.mul(0.2)))), float(0)), float(4)).mul(float(1).sub(abs(dot(face, V)).mul(0.5))).mul(gPos.y).mul(float(1).sub(calm));
       // and the sun off it, where its face lies between the sun and the eye. A leaf's shine is white, not
       // its own colour, weak face on and strong at a glancing angle (Fresnel, for wax of index 1.5), and
@@ -1031,7 +1032,7 @@ export function createGrass(options: GrassOptions): Grass {
       const lobe = exp(along.mul(along).add(across.mul(across)).div(offFace.mul(offFace)).negate());
       const glance = float(0.04).add(float(0.96).mul(pow(float(1).sub(max(dot(V, halfway), float(0))), float(5))));
       const gloss = min(lobe.mul(glance).mul(1.6), float(0.6)).mul(sheenAmt).mul(gPos.y).mul(float(1).sub(calm));
-      leafCol = plain.mul(turned).mul(own).add(colLit.mul(vec3(0.95, 1.4, 0.3)).mul(through).mul(0.7)).add(vec3(1, 1, 1).mul(dot(uSunTint, vec3(0.3, 0.5, 0.2))).mul(gloss));
+      leafCol = plain.mul(turned).mul(own).add(colLit.mul(vec3(1.25, 1.4, 0.05)).mul(through).mul(0.7)).add(vec3(1, 1, 1).mul(dot(uSunTint, vec3(0.3, 0.5, 0.2))).mul(gloss));
     } else {
       // (A tuft's foot is less dark than a leaf's root: tufts stand a hand apart, with nothing in front
       // to hide their feet as a sward's own leaves hide its roots, and a field of dark feet is a dark band

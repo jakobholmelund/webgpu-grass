@@ -140,7 +140,17 @@ is a separate mower at a fixed height, so its edges are steps
   its upper. So the stripes are strong from the air, faint from a stance
   on the fairway, and change with the sun and as the eye goes round.
 
-No source gave leaf colours species against species, so those are by eye.
+- **Colour.** A species' colour is a leaf's, worked out with the PROSPECT-D
+  leaf model (Feret et al. 2017): what a leaf holding so much chlorophyll
+  sends back of sun and sky, as linear sRGB, every species at one
+  brightness. A grass leaf sends back about half as much red as green and
+  a quarter as much blue, which is a good deal more red than a green
+  picked by eye, and what the photographs show too. Through a leaf comes
+  as much green, nearly as much red and almost no blue, and the light
+  through the leaves is tinted so. The chlorophyll per square centimetre
+  is an estimate for each grass (38 to 60 ug): no source gives it species
+  against species, and a leaf's wax, which greys fescue and bluegrass, is
+  not in the model.
 
 ## What it does not do yet
 
@@ -236,9 +246,10 @@ No source gave leaf colours species against species, so those are by eye.
 meadow. `TURF_SPECIES`, which the lab starts from, are a golf course's eight surfaces
 (creeping bent, perennial rye as fairway and as rough, red fescue, fescue
 in seed, a hay meadow, bermuda, Kentucky bluegrass): their mowing heights
-and leaf widths are the species' own, and their colour and habit were set
-by eye beside photographs of the real grass. That is a likeness, not a
-measurement: no leaf was measured from a photograph. The photographs are
+and leaf widths are the species' own, their colour is a leaf's by the leaf
+model above, and their habit was set by eye beside photographs of the real
+grass. The habit is a likeness, not a measurement: no leaf was measured
+from a photograph. The photographs are
 not here (their licences are not this one's): put your own in
 `lab/reference/` with a `list.ts` (see `lab/reference.ts`; the folder is
 ignored by git) and *Photo* on the bar shows each beside its species.
