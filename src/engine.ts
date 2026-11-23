@@ -305,6 +305,8 @@ export function createGrass(options: GrassOptions): Grass {
   const SHADOW_HALF_M = 2.4;
   /** A leaf is not in its own shadow: what is this much (m) nearer the sun than it does not count. */
   const SHADOW_BIAS_M = 0.006;
+  /** How many of the picture's pixels apart, along the sun's ray over level ground, two leaves must be for one to shadow the other. */
+  const SHADOW_PIXELS_APART = 1.5;
   const SHADOW_DEEP_M = 60;
   /** Only the squares of leaves that reach no further than this (m) are drawn into it: the two nearest. */
   const SHADOW_NEAR_RANGE_M = 2;
@@ -326,7 +328,12 @@ export function createGrass(options: GrassOptions): Grass {
     shadowNodes.push(node as unknown as THREE.TextureNode);
     const nearest = (node as unknown as Vec4).x;
     const known = float(1).sub(smoothstep(float(0.8), float(0.98), max(abs(clip.x), abs(clip.y)))).mul(uShadowOn);
-    return vec2(step(clip.z.sub(SHADOW_BIAS_M / SHADOW_DEEP_M), nearest), known);
+    // (The picture cannot tell apart what lies within one of its pixels, and under a low sun a pixel is a
+    // long way along the ground: a pixel's breadth over the sun's slope. Leaves nearer each other than that
+    // are not in each other's shadow by it, or a short sward comes out in blocks the size of the pixels.)
+    const along = pow(max(float(1).sub(uSun.y.mul(uSun.y)), float(0)), float(0.5)).div(max(uSun.y, float(0.05)));
+    const apart = along.mul(SHADOW_PIXELS_APART * 2 * SHADOW_HALF_M / SHADOW_SIZE).add(SHADOW_BIAS_M);
+    return vec2(step(clip.z.sub(apart.div(SHADOW_DEEP_M)), nearest), known);
   };
   const noiseTex = makeNoiseTexture();
   const table = makeSpeciesTable();
