@@ -178,8 +178,9 @@ in seed, a hay meadow, bermuda, Kentucky bluegrass): their mowing heights
 and leaf widths are the species' own, and their colour and habit were set
 by eye beside photographs of the real grass. That is a likeness, not a
 measurement: no leaf was measured from a photograph. The photographs are
-not here (their licences are not this one's); list your own in
-`lab/reference.ts` and *Photo* on the bar shows each beside its species.
+not here (their licences are not this one's): put your own in
+`lab/reference/` with a `list.ts` (see `lab/reference.ts`; the folder is
+ignored by git) and *Photo* on the bar shows each beside its species.
 
 ## Licence
 

@@ -1,3 +1,5 @@
 node_modules
 dist
 .DS_Store
+# Reference photographs of real grass: yours, on their own terms (lab/reference.ts).
+lab/reference/

@@ -14,6 +14,8 @@ export interface Reference {
   source: string;
 }
 
-// (None are shipped: add your own files to ./reference and list them here, and the lab's Photo button shows
-// each beside its species.)
-export const REFERENCES: Reference[] = [];
+// None are shipped: their licences are not this one's. Put your own in ./reference with a `list.ts` there
+// that exports `REFERENCES: Reference[]` (the folder is ignored by git), and the lab's Photo button shows
+// each beside its species. Without that file there are none, and no button.
+const found = import.meta.glob<{ REFERENCES?: Reference[] }>("./reference/list.ts", { eager: true });
+export const REFERENCES: Reference[] = Object.values(found)[0]?.REFERENCES ?? [];
