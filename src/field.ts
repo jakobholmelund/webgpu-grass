@@ -35,6 +35,11 @@ export interface MapSource {
    * shades anything.
    */
   bounds?: { x0: number; z0: number; x1: number; z1: number };
+  /**
+   * The furthest `edge` is ever told (m), if the map has such a limit: a map of cells knows how far off
+   * a border is only up to a cell or two, and says that much for everywhere deeper in.
+   */
+  edgeReach?: number;
   dispose(): void;
 }
 
@@ -193,6 +198,7 @@ export function speciesMap(m: GrassMap): SpeciesMapSource {
   return {
     set,
     bounds: { x0: m.x0, z0: m.z0, x1: m.x0 + nx * cell, z1: m.z0 + nz * cell },
+    edgeReach: 1.25 * SMOOTH_CELLS * cell,
     sample(xz) {
       const t = xz.sub(vec2(m.x0, m.z0)).div(cell);
       // (Across a border the lead grows about as the distance over the blur's width does.)

@@ -77,8 +77,8 @@ grass.update(renderer, camera, timeSeconds, lookAt);
   name no species; they read the row. Nor need a row be a grass: `stem`
   makes its leaves round, stiff stems and `tussock` stands it in tussocks
   with open ground between, which together are a rush (`MORE_PLANTS.rush`,
-  soft rush, for a marsh; the lab's "Soft rush" scene). Its flowers are not
-  drawn.
+  soft rush, for a marsh; the lab's "Soft rush" scene), and `flower` puts a
+  rush's brown tuft of flowers on the side of some of its stems.
 - **Style** (`grass.style`) is how it is drawn, apart from what it is.
 - **Light and wind** (`grass.environment`) are the host's to set.
 - **The ground** is the host's mesh. `grass.groundColor(xz)` and

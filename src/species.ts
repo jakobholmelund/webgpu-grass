@@ -47,6 +47,8 @@ export interface Species {
    * looks the same from every side, has no rib and no veins, and lets no light through.
    */
   stem: number;
+  /** The share of its stems that are in flower, 0..1: a brown tuft on the stem's side, a hand below its tip (a rush's). Only on a stem. */
+  flower: number;
 
   // How it behaves.
   /** How little the wind moves it, 0 (lies down in a gust) to 1 (does not stir). */
@@ -176,7 +178,7 @@ export function makeSpeciesTable(): THREE.Vector4[] {
  *        (and in z, w: patchSize, patchTall)
  *  10  patchTint r, g, b, patch
  *   9  the ground's picture's own mean colour (linear r, g, b)
- *  12  tussock, stem
+ *  12  tussock, stem, flower
  *
  * `layers` gives each picture's name its layer in the leaf texture.
  */
@@ -208,7 +210,7 @@ export function packSpecies(
     const under = ground[k] ?? null;
     table[row + 8].set(under ? s.groundDetail : 0, Math.max(0.05, s.groundTile), Math.max(0.02, s.patchSize), s.patchTall);
     table[row + 11].set(Math.min(1, Math.max(-1, s.patchSite)), Math.max(0, s.edgeBlend), Math.min(1, Math.max(0, s.cutTip)), 0);
-    table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), 0, 0);
+    table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), 0);
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
     table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, s.patchKind === "blotches" ? 1 : 0);
   }
@@ -217,7 +219,7 @@ export function packSpecies(
 /** A plain leaf: what a species written before leaves had pictures is given. */
 const NO_TEXTURE = { leafTexture: "", textureMode: "detail" as TextureMode, textureStrength: 1, textureCutout: false };
 /** What a species written before these were settings is given: a plain leaf, standing as it grew. */
-const NO_PATCHES = { tussock: 0, stem: 0, cutTip: 0, edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
+const NO_PATCHES = { tussock: 0, stem: 0, flower: 0, cutTip: 0, edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
 const ADDED_LATER = { ...NO_TEXTURE, ...NO_PATCHES, lay: 0, groundDetail: 1, groundTile: 0.6 };
 
 /**
@@ -424,13 +426,13 @@ export const MORE_TURF: { bermuda: Species; bluegrass: Species } = {
  * stems, 2 to 4 mm thick at the foot and tapering to a point, 30 cm to over a metre tall, stiff and nearly
  * straight, standing in dense tussocks that fan out from their middles, with the last years' dead stems
  * straw-brown among the green (the floras: Stace; Clapham, Tutin and Moore). Its colour is a guess at a
- * dark leaf's (65 ug of chlorophyll to the square centimetre): nobody has published a rush's. Not drawn:
- * its flowers, a brown tuft that sits on the side of a stem a hand below its tip.
+ * dark leaf's (65 ug of chlorophyll to the square centimetre): nobody has published a rush's. Its flowers
+ * are a brown tuft that sits on the side of a stem a hand below its tip, on a third of its stems.
  */
 export const MORE_PLANTS: { rush: Species } = {
   rush: turf("Soft rush", 5, {
-    height: 0.75, heightSpread: 0.7, density: 0.8, tufted: true, width: 0.0034, widthSpread: 0.0012, tip: "point",
-    splay: 0.5, droop: 0, twist: 0, seedHead: 0, stiffness: 0.85, clump: 1, disorder: 0.5, tussock: 0.85, stem: 1,
+    height: 0.75, heightSpread: 0.7, density: 1.3, tufted: true, width: 0.0034, widthSpread: 0.0012, tip: "point",
+    splay: 0.5, droop: 0, twist: 0, seedHead: 0, stiffness: 0.85, clump: 1, disorder: 0.5, tussock: 0.82, stem: 1, flower: 0.35,
     color: "#5a7a48", tipTint: [1.12, 1.02, 0.78], rootShade: 0.4, variation: 0.26, dry: 0.2, sheen: 1, edgeBlend: 0.6,
   }),
 };

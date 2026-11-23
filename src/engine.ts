@@ -183,6 +183,24 @@ const TUSSOCK_WIDEST = 0.42;
 const TUSSOCK_SMALLEST = 0.06;
 /** A stem (`Species.stem`): how much of its thickness is left at its tip's foot, and how much darker its edges are than its middle, being turned away. */
 const STEM_TAPER = 0.45;
+/**
+ * A stem's flowers (`Species.flower`): a tuft on one side of it, this far up it and this tall (shares of
+ * its length), reaching this many of the stem's own breadths out from its middle. The stem's strip is
+ * drawn that much broader and cut back to the stem and the tuft, pixel by pixel, and only where the stem
+ * is a few pixels broad in the picture: a tuft on a stem a pixel broad is a speck that comes and goes.
+ */
+const FLOWER_AT = 0.79;
+const FLOWER_TALL = 0.03;
+const FLOWER_OUT = 7;
+const FLOWER_FROM_PX = 1.6;
+/**
+ * Within this many metres of its stand's edge a tussocked plant grows everywhere: the tussocks close up
+ * into a fringe along the edge. (Half as far as the map can tell an edge is, `MapSource.edgeReach`, if that
+ * is less: a fringe as broad as that is the whole stand.)
+ */
+const TUSSOCK_FRINGE_M = 0.6;
+/** The share of a stand of stems that is drawn however thin they are in the picture. */
+const STEMS_SEEN_LEAST = 0.7;
 /** Radians a stem tilts for a lean of 1. */
 const STEM_TILT = 1.1;
 const STEM_ROUND = 0.42;
@@ -482,6 +500,8 @@ const hash21 = Fn(([pIn]: [Vec2]) => {
 
 export function createGrass(options: GrassOptions): Grass {
   const { height, map, mow } = options;
+  /** How broad the fringe of a tussocked stand is (m): see `TUSSOCK_FRINGE_M`. */
+  const fringeM = Math.min(TUSSOCK_FRINGE_M, (map.edgeReach ?? Infinity) * 0.5);
   const layers = options.layers ?? DEFAULT_LAYERS;
 
   const group = new THREE.Group();
@@ -1350,7 +1370,11 @@ export function createGrass(options: GrassOptions): Grass {
     const goesUp = mix(sin(bendHere).div(bendAll), cos(tiltBy).mul(gy), stem);
     const runAll = normalize(mix(vec3(leanTo.x.mul(sin(bendHere)), cos(bendHere), leanTo.y.mul(sin(bendHere))), vec3(leanTo.x.mul(sin(tiltBy)), cos(tiltBy), leanTo.y.mul(sin(tiltBy))), stem));
     const faceAll = normalize(cross(side, runAll));
-    const rawPos = foot.add(side.mul(leafX).mul(width)).add(vec3(0, bladeTall.mul(goesUp), 0)).add(vec3(leanTo.x, 0, leanTo.y).mul(bladeTall).mul(goesOut)).sub(faceAll.mul(ribBack.mul(width).mul(sin(foldBy).div(cos(foldBy)))));
+    // (A stem in flower: its strip is broader by `FLOWER_OUT`, for the tuft to be drawn on. See `leafMaterial`.)
+    const stemPixels = o.field ? leafWidth.mul(2).div(max(pixel, float(1e-6))) : float(40);
+    const inFlower = fine ? step(hashCell(hcell.add(b.mul(15.1).add(37.0))), row(k, 12).z).mul(stem).mul(smoothstep(float(FLOWER_FROM_PX), float(FLOWER_FROM_PX * 2), stemPixels)).mul(float(1).sub(uFromSun)) : float(0);
+    const stripBroader = mix(float(1), float(FLOWER_OUT), inFlower);
+    const rawPos = foot.add(side.mul(leafX).mul(width).mul(stripBroader)).add(vec3(0, bladeTall.mul(goesUp), 0)).add(vec3(leanTo.x, 0, leanTo.y).mul(bladeTall).mul(goesOut)).sub(faceAll.mul(ribBack.mul(width).mul(sin(foldBy).div(cos(foldBy)))));
     // (The root is sunk a little so no leaf floats on a slope: 3 cm for tall grass, less for a leaf shorter than that.)
     const rawY = rawPos.y.sub(min(float(0.03), bladeTall.mul(0.4)).mul(float(1).sub(gy)));
     // A fine plant has three leaves, and more the denser its species is above
@@ -1481,7 +1505,8 @@ export function createGrass(options: GrassOptions): Grass {
     // The picture on the leaf: across it and up it, its layer and how much of
     // it shows. In a field its detail fades out with distance (it has no
     // smaller copies of itself to be seen small by); its outline stays.
-    const u = mix(gPos.x.mul(0.5).add(0.5), edge.mul(0.5).add(0.5), cutout);
+    // (Across a stem: its edges at 0 and 1 and, on a strip made to fold, its rib in the middle.)
+    const u = mix(mix(gPos.x.mul(0.5).add(0.5), edge.mul(0.5).add(0.5), cutout), edge.mul(float(1).sub(onRib)).mul(0.5).add(0.5), stem);
     const shows = picture.y.mul(o.field ? float(1).sub(smoothstep(float(3), float(9), dist)) : float(1));
     // What the picture's colour is set against: mid grey (a picture of detail) or the species' own colour (a picture of the leaf).
     // (A dead leaf has lost the species' colour: its picture is set against that colour's grey, and stays straw.)
@@ -1495,7 +1520,7 @@ export function createGrass(options: GrassOptions): Grass {
     // (Nothing brighter than light itself, and never not a number: one such leaf in a picture that blooms what is bright is a lamp.)
     const inAir = o.field && options.world?.air ? options.world.air(col, worldPos) : col;
     const colSafe = min(max(inAir, vec3(0)), vec3(LEAF_BRIGHT_MOST));
-    return { pos: worldPos, col: colSafe, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout), surface: vec3(pixelsBroad, dot(side, uSun), stem) };
+    return { pos: worldPos, col: colSafe, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout), surface: vec4(pixelsBroad, dot(side, uSun), stem, stripBroader) };
   };
 
   /** The leaves' material: unlit (the colour is worked out in `leaf`), the scene's fog applied. */
@@ -1514,8 +1539,18 @@ export function createGrass(options: GrassOptions): Grass {
     //  - its edges, which turn away and are thin;
     //  - its veins, which in a grass run side by side from root to tip (and need the leaf broader still).
     const vSurface = varying(out.surface, `vGrassSurface${name}`);
-    const across = vUv.x.sub(0.5);
+    // (On a strip drawn broader for a stem's flowers, the stem is the strip's middle: across it, in the stem's own breadths.)
+    const onStem = vUv.x.sub(0.5).mul(vSurface.w);
+    const across = clamp(onStem, float(-0.5), float(0.5));
     const outTo = abs(across).mul(2);
+    // The flowers: a tuft of small brown flowers that seems to sit on the stem's side, a hand below its tip
+    // (what goes on above it is a bract, which looks like more stem). A lumpy oval, its inner end on the stem.
+    // (`onStem` runs half a breadth to either side over the stem, and half of `FLOWER_OUT` to the strip's edge.)
+    const tuftAcross = onStem.sub(FLOWER_OUT * 0.25 + 0.15).div(FLOWER_OUT * 0.25 - 0.15);
+    const tuftAlong = vUv.y.sub(FLOWER_AT).div(FLOWER_TALL * 0.5);
+    const lumps = sin(tuftAlong.mul(7.3).add(tuftAcross.mul(4.1))).mul(sin(tuftAcross.mul(9.7).sub(tuftAlong.mul(3.3)))).mul(0.3);
+    const inTuft = step(tuftAcross.mul(tuftAcross).add(tuftAlong.mul(tuftAlong)).add(lumps), float(1)).mul(step(float(1.5), vSurface.w));
+    const onTheStem = step(abs(onStem), float(0.5));
     const shown = smoothstep(float(LEAF_DETAIL_FROM_PX), float(LEAF_DETAIL_FROM_PX * 2.5), vSurface.x);
     const veinsShown = smoothstep(float(LEAF_VEINS_FROM_PX), float(LEAF_VEINS_FROM_PX * 2), vSurface.x);
     const halves = sign(across).mul(vSurface.y).mul(smoothstep(float(0.02), float(0.12), abs(across))).mul(LEAF_HALVES);
@@ -1527,9 +1562,10 @@ export function createGrass(options: GrassOptions): Grass {
     const stemSurface = float(1).add(across.mul(2).mul(vSurface.y).mul(STEM_ROUND).sub(outTo.mul(outTo).mul(STEM_ROUND)).mul(shown));
     const surface = mix(leafSurface, stemSurface, vSurface.z);
     // (No brighter than the host allows, `look.brightest`: by its brightest channel, so a leaf held back keeps its colour.)
-    const drawn = vCol.mul(surface).mul(mix(vec3(1), min(vec3(texel.x, texel.y, texel.z).div(vec3(vAgainst.x, vAgainst.y, vAgainst.z)), vec3(4)), vUv.w));
+    const flowerCol = vec3(0.95, 0.55, 0.3).mul(float(1).add(lumps.mul(0.9)));
+    const drawn = vCol.mul(mix(vec3(surface), flowerCol, inTuft)).mul(mix(vec3(1), min(vec3(texel.x, texel.y, texel.z).div(vec3(vAgainst.x, vAgainst.y, vAgainst.z)), vec3(4)), vUv.w));
     mat.colorNode = vec4(drawn.mul(min(float(1), uBrightest.div(max(max(drawn.x, drawn.y), max(drawn.z, float(1e-4)))))), 1);
-    mat.maskNode = vAgainst.w.lessThan(0.5).or(texel.w.greaterThan(0.5));
+    mat.maskNode = vAgainst.w.lessThan(0.5).or(texel.w.greaterThan(0.5)).and(onTheStem.add(inTuft).greaterThan(0.5));
     if (o.fine && o.field) {
       // (Where the picture has several samples to a pixel, a share of them is the leaf: a far leaf thins out and does not fatten.)
       mat.opacityNode = varying(out.cover, `vGrassCover${name}`);
@@ -1624,7 +1660,9 @@ export function createGrass(options: GrassOptions): Grass {
         // outward, none at its range (no smoothstep: its flat ends would show
         // as a ring where the thinning starts and another where it ends).
         const fadeDist = fine ? distance(xz, uFocus) : dist;
-        const viewShare0 = (fine ? leavesAt(fromThick(xz), L.range).mul(leafSeen(row(k, 1).x.add(row(k, 1).y.mul(0.5)), dist)) : pow(clamp(float(1).sub(fadeDist.sub(L.range * 0.12).div(L.range * 0.88)), float(0), float(1)), float(0.85)))
+        // (Most of a stand of stems is drawn however thin they are in the picture: a stem to the knee is seen as a
+        // line long after it is too thin to be seen as a breadth, and from above a marsh without them is its bare floor.)
+        const viewShare0 = (fine ? leavesAt(fromThick(xz), L.range).mul(max(leafSeen(row(k, 1).x.add(row(k, 1).y.mul(0.5)), dist), row(k, 12).y.mul(STEMS_SEEN_LEAST))) : pow(clamp(float(1).sub(fadeDist.sub(L.range * 0.12).div(L.range * 0.88)), float(0), float(1)), float(0.85)))
           .mul(mix(float(1), mix(float(0.74), float(1), chaosThick), disorder))
           .mul(float(1).sub(uStyle.x.mul(0.6)))
           .mul(uAmount);
@@ -1651,11 +1689,12 @@ export function createGrass(options: GrassOptions): Grass {
         // Nor does a tuft stand within a stride of the eye, where its broad
         // blades are flat green wedges before the lens: that ground is the
         // fine leaves' (the host aims them at the foreground, see `update`).
-        // (A tall stand's tufts also stand wherever its leaves are too thin in the picture to be drawn, which
-        // on a small picture, or from above, is nearer than the leaves' reach: short grass that far off is
-        // its ground's colour and nothing is missed, but a stand to the knee is a shape, and without it
-        // there is a bare strip between the last leaves and the first tufts.)
-        const leavesUnseen = float(1).sub(leafSeen(row(k, 1).x.add(row(k, 1).y.mul(0.5)), dist)).mul(smoothstep(float(TUFTS_FOR_UNSEEN_FROM_M), float(TUFTS_FOR_UNSEEN_FROM_M * 2.5), tall0));
+        // (A tall stand's tufts also stand wherever few of its leaves are drawn: off to the side of where
+        // the leaves are thickest, or where they are too thin in the picture, which on a small picture or
+        // from above is nearer than the leaves' reach. Short grass there is its ground's colour and nothing
+        // is missed, but a stand to the knee is a shape, and without it there is bare ground between the
+        // last leaves and the first tufts.)
+        const leavesUnseen = fine ? float(0) : float(1).sub(leavesLeft(xz, row(k, 1).x.add(row(k, 1).y.mul(0.5)))).mul(smoothstep(float(TUFTS_FOR_UNSEEN_FROM_M), float(TUFTS_FOR_UNSEEN_FROM_M * 2.5), tall0));
         const layerOn = fine ? float(1) : tufted.mul(max(smoothstep(uLeafReach.mul(0.45), uLeafReach, dist), leavesUnseen)).mul(smoothstep(float(0.9), float(1.5), dist));
         const grow = alive.mul(rooted).mul(rangeFade).mul(thin).mul(layerOn);
 
@@ -1666,7 +1705,8 @@ export function createGrass(options: GrassOptions): Grass {
         // Beside shorter grass, or bare ground, a stand comes down to meet it over a stride (by the canopy's
         // picture, which is the mean of the two at their line): never up, so mown turf beside rough stays
         // mown to its edge, and what is left at the line is a step half the height it was.
-        tallNode.mulAssign(mix(clamp(canopyAt(xz).div(max(tall0, float(1e-4))), float(0.3), float(1)), float(1), smoothstep(float(0), row(k, 11).y.mul(0.9).add(EDGE_RAMP_M), here.edge)));
+        // (Not stems: a rush at its stand's edge is as tall as any other, and stands over the grass beside it.)
+        tallNode.mulAssign(mix(clamp(canopyAt(xz).div(max(tall0, float(1e-4))), float(0.3), float(1)), float(1), max(smoothstep(float(0), row(k, 11).y.mul(0.9).add(EDGE_RAMP_M), here.edge), row(k, 12).y)));
         if (fine) {
           // (A pile is a pile only while it is thick. Where the square thins out, lone leaves a centimetre tall on close-mown turf are dark specks on it, so there they sink away and leave the turf to the ground.)
           const closeMown = float(1).sub(smoothstep(float(0.015), float(0.03), tall0));
@@ -1711,7 +1751,9 @@ export function createGrass(options: GrassOptions): Grass {
         // odd one missing. (In squared shares of the way between clumps, as `clumpBest` is.)
         const tussockAmt = row(k, 12).x;
         const tussockWide = mix(float(TUSSOCK_WIDEST), float(TUSSOCK_SMALLEST), tussockAmt).mul(mix(float(0.45), float(1.5), hash21(clumpId.add(29.9))));
-        const inTussock = mix(float(1), float(1).sub(smoothstep(tussockWide.mul(0.55), tussockWide, clumpBest.add(chB.r.sub(0.5).mul(0.05)))), step(float(0.01), tussockAmt));
+        // (Along the stand's edge the tussocks close up: what grows at a marsh's margin is a fringe, not islands.)
+        const inFringe = float(1).sub(smoothstep(float(fringeM * 0.4), float(fringeM), here.edge.add(chA.b.sub(0.5).mul(fringeM * 0.3))));
+        const inTussock = mix(float(1), max(float(1).sub(smoothstep(tussockWide.mul(0.55), tussockWide, clumpBest.add(chB.r.sub(0.5).mul(0.05)))), inFringe), step(float(0.01), tussockAmt));
         tallNode.mulAssign(inTussock);
 
         // (The tufts thin with distance, and those left are drawn broader.)
