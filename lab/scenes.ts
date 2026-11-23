@@ -111,7 +111,7 @@ export const SCENES: Scene[] = [
     title: "A dry summer",
     blurb: "A lawn after six weeks without rain: straw, with the patches that still hold water left green.",
     species: turf((list) => {
-      Object.assign(list[BLUEGRASS], { name: "Parched lawn", dry: 0.22, color: "#a8974c", tipTint: [1.12, 1.04, 0.8], density: 0.8, height: 0.05, sheen: 0.1, rootShade: 0.55, variation: 0.3, patchKind: "blotches", patch: 0.4, patchSize: 1.4, patchTint: [0.58, 1.0, 0.66], patchTall: 1.15 });
+      Object.assign(list[BLUEGRASS], { name: "Parched lawn", dry: 0.22, color: "#a8974c", tipTint: [1.12, 1.04, 0.8], density: 0.8, height: 0.05, sheen: 0.1, rootShade: 0.55, variation: 0.3, patchKind: "blotches", patchSite: -1, patch: 0.4, patchSize: 1.4, patchTint: [0.58, 1.0, 0.66], patchTall: 1.15 });
     }),
     plot: BLUEGRASS, row: BLUEGRASS,
     view: { x: -4, z: -12, eye: 0.35, yaw: 2.6, pitch: -0.14, fov: 48 },

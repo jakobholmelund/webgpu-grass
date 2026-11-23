@@ -104,9 +104,14 @@ grass.update(renderer, camera, timeSeconds, lookAt);
   and each a little unlike the next, gathered in drifts (annual
   meadow-grass on greens was measured at 10 cm to 2.5 m across, 50 cm on
   average: Poole and Johnston, WSU). Blotches: odd shapes with hazy edges,
-  as drought makes. Neither yet follows the ground: real drought takes the
-  crowns and the slopes that face the sun, and colonies the shade and the
-  wet hollows.
+  as drought makes.
+- **The lie of the ground.** Where the map gives its `bounds`, each place
+  is known as a crown (above the ground 2.5 m round it) or a hollow
+  (below the ground 9 m round it). The grass is lusher in the hollows and
+  paler on the crowns (`look.site`), and a species' patches take to one or
+  the other (`patchSite`): meadow-grass to the wet, drought to the crowns.
+  It is the ground's shape only: not shade, not which way a slope faces,
+  not where the sprinklers reach.
 - **Mowing stripes** are off unless `look.mown` is set: then leaves are
   laid one way and back in passes (`mowStripes`), and the stripes are
   their lean.

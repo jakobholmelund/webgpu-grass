@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b32";
+const LAB_BUILD = "b33";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -306,6 +306,7 @@ async function start() {
   const fieldPanel = sceneGui.addFolder("Field");
   shownAs(fieldPanel, grass.look, "clumpSize", 100, 20, 300, "clump size (cm)").onChange(save);
   shownAs(fieldPanel, grass.look, "macro", 100, 0, 100, "colour drift (%)").onChange(save);
+  shownAs(fieldPanel, grass.look, "site", 100, 0, 100, "colour follows the ground (%)");
   shownAs(fieldPanel, grass.look, "edgeWobble", 100, 0, 60, "border wobble (cm)").onChange(save);
   shownAs(fieldPanel, grass.look, "groundShade", 100, 50, 110, "ground under it (%)").onChange(save);
   // How the plot was mown: it shows on the species the mower lays over (Species, Behaviour).
@@ -600,6 +601,7 @@ async function start() {
     const patchPanel = folder("Patches");
     patchPanel.add(s, "patchKind", ["colonies", "blotches"]).name("they are").onChange(changed);
     shownAs(patchPanel, s, "patch", 100, 0, 100, "share of the ground (%)").onChange(changed);
+    shownAs(patchPanel, s, "patchSite", 100, -100, 100, "hollows (-) or crowns (+)").onChange(changed);
     shownAs(patchPanel, s, "patchSize", 100, 5, 400, "across (cm)").onChange(changed);
     shownAs(patchPanel, s, "patchTall", 100, 30, 200, "height there (%)").onChange(changed);
     (["red", "green", "blue"] as const).forEach((ch, i) => shownAs(patchPanel, s.patchTint, String(i), 100, 50, 160, `${ch} there (%)`).onChange(changed));
@@ -628,7 +630,7 @@ async function start() {
   refreshShow();
 
   // The gallery: ten scenes, each one press. A scene sets everything the lab has.
-  const LOOK_AS_MADE = { mown: false, depth: 0.5, clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45 };
+  const LOOK_AS_MADE = { site: 0.5, mown: false, depth: 0.5, clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45 };
   const gallery = el<HTMLDialogElement>("gallery");
   const at = { scene: -1 };
   const refreshCaption = () => {

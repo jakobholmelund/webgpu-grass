@@ -119,6 +119,11 @@ const LEAF_REACH = 1.4;
 const LEAF_AHEAD = 0.45;
 /** How much paler grass is under a gust than out of one, at a wind of 8 m/s: laid-over leaves show their undersides. */
 const GUST_PALE = 0.3;
+/** A crown is ground that stands this much (m) above the mean of the ground this far (m) round it; a hollow lies this much below the mean further round. */
+const SITE_NEAR_M = 2.5;
+const SITE_NEAR_RISE = 0.05;
+const SITE_FAR_M = 9;
+const SITE_FAR_DROP = 0.3;
 /** A leaf folded along its rib has each half turned this far (radians) from flat, at a `fold` of 1: a shallow V. */
 const FOLD_ANGLE = 0.5;
 /** A tuft's blade is this many times as broad as a fine leaf of its species: it stands for several. */
@@ -189,7 +194,9 @@ export interface Grass {
   /**
    * The field as a whole. `clumpSize`: metres between clump centres.
    * `macro`: how much the colour drifts over tens of metres. `edgeWobble`:
-   * how far (m) a border strays from the map's cells. `mown`: whether the field is mown in stripes at all (`GrassOptions.mow` says how): off, no
+   * how far (m) a border strays from the map's cells. `site`: how far the grass's colour follows the lie of the ground, lusher in the hollows
+   * and paler on the crowns (it needs the map's `bounds`; patches follow it by each species' `patchSite`).
+   * `mown`: whether the field is mown in stripes at all (`GrassOptions.mow` says how): off, no
    * leaf is laid over and there are no stripes. `depth`: how far a stand's
    * roots are as dark as the light's fall through its leaves makes them (by its height, its
    * density and the sun's height), over the species' own `rootShade` alone (0).
@@ -207,7 +214,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -300,6 +307,8 @@ export function createGrass(options: GrassOptions): Grass {
   const uShade = uniform(new THREE.Vector2(0.6, 0.45));
   /** depth: how far the roots' shade follows the light's fall through the stand (0: the species' own `rootShade`). */
   const uLight = uniform(0.5);
+  /** How far the grass's colour follows the lie of the ground (`look.site`). */
+  const uSite = uniform(0.5);
   /** fold, relief, leafPixels. */
   const uDetail = uniform(new THREE.Vector3(1, 1, 1));
   const bare = new THREE.Color("#8a7355");
@@ -407,14 +416,41 @@ export function createGrass(options: GrassOptions): Grass {
     const here = lookup(at);
     const alive = step(here.species, float(MAX_SPECIES - 0.5));
     const tall = row(int(min(here.species, float(MAX_SPECIES - 1))), 0).x.mul(alive);
+    // And with it the lie of the ground there, which the grass's own height has nothing to do with but
+    // which is wanted at the same places: whether it stands above the ground about it, a few strides
+    // round (a crown or a knoll: it sheds water and dries first), and whether it lies below the ground
+    // further round (a hollow: water comes to it and stays). Each -1..1, kept as 0..1.
+    const ringMean = (r: number) => {
+      let sum = float(0) as THREE.Node<"float">;
+      for (let i = 0; i < 8; i++) sum = sum.add(height.sample(at.add(vec2(Math.cos((i * Math.PI) / 4) * r, Math.sin((i * Math.PI) / 4) * r))).height);
+      return sum.div(8);
+    };
+    const own = height.sample(at).height;
+    const crown = clamp(own.sub(ringMean(SITE_NEAR_M)).div(SITE_NEAR_RISE), float(-1), float(1));
+    const basin = clamp(ringMean(SITE_FAR_M).sub(own).div(SITE_FAR_DROP), float(-1), float(1));
     const mat = new THREE.MeshBasicNodeMaterial({ fog: false });
-    mat.colorNode = vec4(min(tall.div(CANOPY_MAX), float(1)), 0, 0, 1);
+    mat.colorNode = vec4(min(tall.div(CANOPY_MAX), float(1)), crown.mul(0.5).add(0.5), basin.mul(0.5).add(0.5), 1);
     return new THREE.QuadMesh(mat);
   })();
   const canopyAt = (xz: Vec2): THREE.Node<"float"> => {
     if (!reach || !canopyTarget) return float(0);
     const at = xz.sub(vec2(reach.x0, reach.z0)).div(vec2(reach.x1 - reach.x0, reach.z1 - reach.z0));
     return (texture(canopyTarget.texture, at).level(float(0)) as unknown as Vec4).x.mul(CANOPY_MAX);
+  };
+  /**
+   * How dry a place is for where it lies, -1 (a hollow, where water gathers) to 1 (a crown, which sheds
+   * it): from the lie of the ground alone, as the canopy's picture keeps it. 0 where there is no picture.
+   */
+  const dryAt = (xz: Vec2): THREE.Node<"float"> => {
+    if (!reach || !canopyTarget) return float(0);
+    const at = xz.sub(vec2(reach.x0, reach.z0)).div(vec2(reach.x1 - reach.x0, reach.z1 - reach.z0));
+    const kept = texture(canopyTarget.texture, at).level(float(0)) as unknown as Vec4;
+    return clamp(kept.y.sub(0.5).mul(1.3).sub(kept.z.sub(0.5).mul(1.5)), float(-1), float(1));
+  };
+  /** The grass's colour for where it lies: lusher and deeper in the hollows, paler and yellower on the crowns (`look.site`). */
+  const siteTint = (xz: Vec2): Vec3 => {
+    const dry = dryAt(xz);
+    return mix(vec3(1), mix(vec3(0.88, 0.97, 0.86), vec3(1.12, 1.05, 0.84), dry.mul(0.5).add(0.5)), uSite.mul(abs(dry)));
   };
   /**
    * How much of the sun reaches a point `up` metres above the ground at a
@@ -457,7 +493,8 @@ export function createGrass(options: GrassOptions): Grass {
    * makes it; its edge is frayed by pushing the place about a little before measuring.
    */
   const inPatch = (xz: Vec2, k: THREE.Node<"int">): THREE.Node<"float"> => {
-    const share = row(k, 10).w;
+    // (More of them where the ground suits them and fewer where it does not: `patchSite`.)
+    const share = clamp(row(k, 10).w.mul(float(1).add(row(k, 11).x.mul(dryAt(xz)).mul(1.8))), float(0), float(1));
     const size = row(k, 8).z;
     const turn = (v: Vec2, c: number, sn: number) => vec2(v.x.mul(c).sub(v.y.mul(sn)), v.x.mul(sn).add(v.y.mul(c)));
     // (Where colonies get in at all: over some ten patches' breadth, more here and none there.)
@@ -653,7 +690,7 @@ export function createGrass(options: GrassOptions): Grass {
     const windTakes = min(smoothstep(float(0.075), float(0.17), row(k, 0).x).mul(float(1).sub(row(k, 2).w)).mul(1.4), float(1));
     const blown = float(1).add(gustIs.sub(0.5).mul(windTakes).mul(clamp(uWind.z.div(8.0), float(0), float(1.7))).mul(far).mul(GUST_PALE));
     // (Bare ground is shaded as grown ground is: a path beside tall grass lies in its shadow.)
-    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
+    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
   };
 
   const geometries: THREE.BufferGeometry[] = [];
@@ -1156,7 +1193,7 @@ export function createGrass(options: GrassOptions): Grass {
           .add(lay.mul(LAY_LEAN));
 
         // (What of the sky it sees is worked out half way up it, and is in its colour; the sun at its root and at its tip go with it, for the leaf to shade between.)
-        const colLit = tone(xz, base).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
+        const colLit = tone(xz, base).mul(siteTint(xz)).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
         // (A fine leaf is broadened for the leaves the view thinned out about it, not for those its species never grows.)
         const broaden = clamp(float(1).div(pow(max(viewShare, float(0.1)), float(0.5))).sub(1), float(0), float(BROADEN_MAX));
         outState.assign(vec4(lean.x, lean.y, tall, gust.sub(0.5).mul(min(windTakes, float(1)))));
@@ -1435,7 +1472,7 @@ export function createGrass(options: GrassOptions): Grass {
   repack();
   const style = { broad: 0, flat: 0 };
   let frame = 0;
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, bare };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const bufferSize = new THREE.Vector2();
@@ -1504,6 +1541,7 @@ export function createGrass(options: GrassOptions): Grass {
       uLook.value.set(Math.max(0.05, look.clumpSize), look.macro, look.edgeWobble, look.groundShade);
       uStripes.value = look.stripes;
       uMown.value = look.mown ? 1 : 0;
+      uSite.value = look.site;
       uShade.value.set(look.shadow, look.occlusion);
       uDetail.value.set(look.fold, look.relief, look.leafPixels);
       uLight.value = look.depth;
