@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b52";
+const LAB_BUILD = "b54";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -138,6 +138,23 @@ async function start() {
   const BENCH_AT = { x: 0, y: heightAt(heights, 0, 0), z: 0 };
   const specimen = grass.createSpecimen(BENCH_AT);
   scene.add(specimen.object);
+
+  // A golf ball, for the scenes that have something lying in the grass.
+  const BALL_RADIUS = 0.021335;
+  const ballMat = new THREE.MeshBasicNodeMaterial();
+  ballMat.colorNode = vec4(vec3(0.93).mul(grass.light(normalWorld)), 1);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_RADIUS, 48, 32), ballMat);
+  ball.visible = false;
+  let ballOn = false;
+  scene.add(ball);
+  const setBall = (b: Scene["ball"] | null) => {
+    ballOn = !!b;
+    if (!b) return grass.setThings([]);
+    const x = view.x - Math.sin(view.yaw) * b.ahead;
+    const z = view.z - Math.cos(view.yaw) * b.ahead;
+    ball.position.set(x, heightAt(heights, x, z) + b.up, z);
+    grass.setThings([{ x, y: ball.position.y, z, radius: BALL_RADIUS, clear: b.clear, keepSeen: b.keepSeen }]);
+  };
   // (A round of soil that pales away into the backdrop at its rim: nothing with an edge to look at but the grass.)
   const standMat = new THREE.MeshBasicNodeMaterial({ fog: false });
   const soil = new THREE.Color("#5f5142");
@@ -662,6 +679,7 @@ async function start() {
       grass.look.mown = true;
     }
     Object.assign(view, sc.view);
+    setBall(sc.ball ?? null);
     [light.sunAzimuth, light.sunElevation] = sc.sun;
     [light.windHeading, light.windSpeed] = sc.wind;
     chosen.row = Math.min(sc.row, species.length - 1);
@@ -804,6 +822,7 @@ async function start() {
     camera.fov = view.fov;
     const onBench = KINDS[bench.show] !== null;
     grass.object.visible = ground.visible = !onBench;
+    ball.visible = ballOn && !onBench;
     specimen.object.visible = stand.visible = onBench;
 
     const speed = (1.2 + view.eye * 1.5) * (keys.has("shift") ? 4 : 1) * dt;
@@ -968,6 +987,7 @@ async function start() {
     preset,
     load,
     scenes: SCENES,
+    setBall,
     applyScene,
     /** The picture as it is now, as a JPEG `wide` pixels across (3:2, cut from its middle). */
     shot(wide = 720) {

@@ -153,6 +153,17 @@ is a separate mower at a fixed height, so its edges are steps
   in the model: it is added as a little more light sent back, most of it
   blue, by estimate.
 
+## Things in the grass
+
+`grass.setThings([{ x, y, z, radius, clear, keepSeen }])` tells the grass
+what lies in it: up to four spheres (a ball, a stone). The grass under one
+is pressed down beneath it, no leaf goes through it, and the leaves against
+it are held still in the wind. `clear` is a nest pressed round it. With
+`keepSeen` the leaves between the eye and the thing are kept under
+the line of sight to its middle, so its top half shows and how deep it sits
+can be read off: grass taller than a ball otherwise hides the ball. The
+thing itself is the host's to draw, and it casts no shadow on the grass yet.
+
 ## What it does not do yet
 
 - **Light.** Leaves are unlit materials, coloured in the compute pass by a

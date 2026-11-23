@@ -28,6 +28,26 @@ type Vec2 = THREE.Node<"vec2">;
 type Vec3 = THREE.Node<"vec3">;
 type Vec4 = THREE.Node<"vec4">;
 
+/** How many things can lie in the grass at once (see `Grass.setThings`). */
+export const MAX_THINGS = 4;
+
+/** Something lying in the grass: a sphere. */
+export interface GrassThing {
+  /** Its centre (m, the world's). */
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  /** The grass is gone within this far (m) of its centre, growing back to full height a little beyond: a nest it has pressed. 0: none. */
+  clear?: number;
+  /**
+   * Keep it in sight: the leaves standing between the eye and it are kept under the line from
+   * the eye to its middle, so its top half shows and how deep it sits can be read off. Grass taller than
+   * a ball hides the ball altogether otherwise.
+   */
+  keepSeen?: boolean;
+}
+
 /** One square of plants. */
 export interface GrassLayer {
   /** Plants along a side, and their spacing (m). */
@@ -156,6 +176,9 @@ const LEAF_RIB_WIDE = 0.035;
 const LEAF_RIM = 0.14;
 /** How dark the line between two veins is. */
 const LEAF_VEIN = 0.07;
+/** The lane kept open between the eye and a thing in the grass is this many times the thing's own breadth: in turf, and in grass a hand high or more. */
+const THING_LANE = 1.2;
+const THING_LANE_TALL = 2.2;
 /** Mown turf no taller than this (m) is one even sward; by twice this it is plants again. */
 const SWARD_BELOW_M = 0.03;
 /** Plants along the side of a square of leaves. */
@@ -264,6 +287,12 @@ export interface Grass {
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
+   * What lies in the grass (a ball, a stone): at most `MAX_THINGS` spheres. No leaf goes through one:
+   * the grass under it is pressed down beneath it, a leaf that would cross it is carried round it, and
+   * the leaves about it are held still. Give them again whenever one moves; none, to clear them.
+   */
+  setThings(list: readonly GrassThing[]): void;
+  /**
    * The pictures the species' leaves can have, by the names the species use
    * (`Species.leafTexture`): at most `MAX_LEAF_TEXTURES`. Each is kept at 64
    * by 256, the leaf's root at its bottom edge.
@@ -360,6 +389,61 @@ export function createGrass(options: GrassOptions): Grass {
   const shadowNodes: THREE.TextureNode[] = [];
   const uSunMat = uniform(new THREE.Matrix4());
   const uShadowOn = uniform(0);
+  // What lies in the grass: each a sphere (its centre and radius), and how the grass is about it (x: cleared to this far, y: kept in sight).
+  const thingAt = Array.from({ length: MAX_THINGS }, () => uniform(new THREE.Vector4(0, -9999, 0, 0)));
+  const thingHow = Array.from({ length: MAX_THINGS }, () => uniform(new THREE.Vector4(0, 0, 0, 0)));
+  /** How tall a plant rooted at `xz` (its ground at `gy`) stands among the things in the grass: `tall`, less whatever they take. `luck` 0..1 is the plant's own. */
+  const amongThings = (tall: THREE.Node<"float">, xz: Vec2, gy: THREE.Node<"float">, luck: THREE.Node<"float">): THREE.Node<"float"> => {
+    let t = tall;
+    for (let i = 0; i < MAX_THINGS; i++) {
+      const c = thingAt[i];
+      const r = c.w;
+      const there = step(float(1e-5), r);
+      const rel = xz.sub(vec2(c.x, c.z));
+      const d = length(rel);
+      // (The nest it has pressed.)
+      const clear = thingHow[i].x;
+      t = t.mul(mix(float(1), smoothstep(clear.mul(0.65), clear.mul(1.15), d), step(float(1e-4), clear).mul(there)));
+      // (Under it: no taller than its underside there.)
+      const under = max(c.y.sub(pow(max(r.mul(r).sub(d.mul(d)), float(0)), float(0.5))).sub(gy).sub(0.002), float(0));
+      t = mix(t, min(t, under), step(d, r).mul(there));
+      // (Between the eye and it: under the line of sight to its middle, for most plants, in a lane a little wider than it is.)
+      const eye = vec3(uCamPos.x.sub(c.x), uCamPos.y.sub(c.y), uCamPos.z.sub(c.z));
+      const eyeFlat = max(length(vec2(eye.x, eye.z)), float(1e-4));
+      const dir = vec2(eye.x, eye.z).div(eyeFlat);
+      const toward = dot(rel, dir);
+      const aside = abs(rel.x.mul(dir.y).sub(rel.y.mul(dir.x)));
+      const sight = max(c.y.sub(gy).add(toward.mul(eye.y).div(eyeFlat)), float(0));
+      // (Every plant in the lane, each to somewhere under the line: at a sward's density one plant in ten
+      // left standing is leaf enough to hide a ball. And a wider lane through taller grass, whose leaves hang in from the sides.)
+      const laneWide = mix(float(THING_LANE), float(THING_LANE_TALL), smoothstep(float(0.06), float(0.15), tall));
+      const lane = float(1).sub(smoothstep(r.mul(laneWide).mul(0.8), r.mul(laneWide).mul(1.7), aside)).mul(step(float(0), toward)).mul(thingHow[i].y).mul(there);
+      t = mix(t, min(t, sight.mul(mix(float(0.6), float(1), luck))), lane);
+    }
+    return t;
+  };
+  /** A point carried out of the things in the grass, if it is inside one: to just off its skin. */
+  const outOfThings = (at: Vec3): Vec3 => {
+    let q = at;
+    for (let i = 0; i < MAX_THINGS; i++) {
+      const c = thingAt[i];
+      const centre = vec3(c.x, c.y, c.z);
+      const from = q.sub(centre);
+      const reach = max(length(from), float(1e-5));
+      const skin = c.w.add(0.002);
+      q = mix(q, centre.add(from.div(reach).mul(skin)), step(reach, skin).mul(step(float(1e-5), c.w)));
+    }
+    return q;
+  };
+  /** How free a leaf at `at` is to move, 0..1: one against a thing in the grass is held by it. */
+  const freeOfThings = (at: Vec3): THREE.Node<"float"> => {
+    let f = float(1) as THREE.Node<"float">;
+    for (let i = 0; i < MAX_THINGS; i++) {
+      const c = thingAt[i];
+      f = f.mul(mix(float(1), smoothstep(c.w.mul(1.6), c.w.mul(6), distance(at, vec3(c.x, c.y, c.z))), step(float(1e-5), c.w)));
+    }
+    return f;
+  };
   /** 1 while the leaves are being drawn from the sun: they are then the leaves the eye sees (as broad, turned the same way), not leaves made for a camera where the sun is. */
   const uFromSun = uniform(0);
   const sunCam = new THREE.OrthographicCamera(-SHADOW_HALF_M, SHADOW_HALF_M, SHADOW_HALF_M, -SHADOW_HALF_M, 0.1, SHADOW_DEEP_M);
@@ -1046,7 +1130,7 @@ export function createGrass(options: GrassOptions): Grass {
     const swingAt = uTime.mul(float(1.3).add(uWind.z.mul(0.22))).add(swingWave).add(hashCell(hcell.add(b.mul(5.3).add(41.0))).sub(0.5).mul(SWING_OWN_RAD * 2)).sub(gy.mul(1.4));
     // (And in still air nothing swings at all.)
     // (Only grass long enough to swing: mown turf up to the first cut stands still in any wind, rough hardly stirs, and from deep rough up it all goes.)
-    const swingBy = smoothstep(float(SWING_FROM_M), float(SWING_FULL_M), row(k, 0).x).mul(float(1).sub(row(k, 2).w.mul(0.75))).mul(smoothstep(float(0), float(1.5), uWind.z).mul(0.014).add(min(uWind.z.div(8), float(1.5)).mul(0.034)));
+    const swingBy = smoothstep(float(SWING_FROM_M), float(SWING_FULL_M), row(k, 0).x).mul(float(1).sub(row(k, 2).w.mul(0.75))).mul(smoothstep(float(0), float(1.5), uWind.z).mul(0.014).add(min(uWind.z.div(8), float(1.5)).mul(0.034))).mul(o.field && fine ? freeOfThings(root.add(vec3(0, tall.mul(0.5), 0))) : float(1));
     const lean2 = o.spin ? lean0 : lean0.add(vec2(sin(swingAt), sin(swingAt.mul(2)).mul(0.5)).mul(swingBy));
     const bendPow = fine ? gy.mul(gy) : pow(gy, float(2.1));
     // The leaf bends over in an arc, and is as long bent as straight: it leans the way of `lean2`, and
@@ -1071,7 +1155,7 @@ export function createGrass(options: GrassOptions): Grass {
     // 1: as many as its density times three, the odd leaf on some plants and
     // not on others. The leaves it has no use for are not drawn.
     const spare = fine ? float(1).sub(step(b.add(hashCell(hcell.add(77.7))), max(stand.z, float(1)).mul(PLANT_LEAVES))) : float(0);
-    const worldPos = tall.lessThanEqual(1e-4).or(spare.greaterThan(0.5)).select(vec3(0, -9999, 0), vec3(rawPos.x, rawY, rawPos.z));
+    const worldPos = tall.lessThanEqual(1e-4).or(spare.greaterThan(0.5)).select(vec3(0, -9999, 0), o.field && fine ? outOfThings(vec3(rawPos.x, rawY, rawPos.z)) : vec3(rawPos.x, rawY, rawPos.z));
 
     const colLit = vec3(colSt.x, colSt.y, colSt.z);
     const tipTint = vec3(tint.x, tint.y, tint.z);
@@ -1403,7 +1487,7 @@ export function createGrass(options: GrassOptions): Grass {
 
         // (The tufts thin with distance, and those left are drawn broader.)
         const lodKeep = fine ? float(1) : step(r0, mix(float(1.0), float(0.45), smoothstep(float(18), float(38), dist)));
-        const tall = tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep);
+        const tall = fine ? amongThings(tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep), xz, gy, hashCell(hcell.add(57.3))) : tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep);
 
         // Gusts: wind does not arrive as even waves. A field of stronger and
         // weaker air, broad patches with smaller ones inside, travels downwind
@@ -1722,6 +1806,18 @@ export function createGrass(options: GrassOptions): Grass {
     environment: { sun: uSun.value, sunTint: uSunTint.value, shadeTint: uShadeTint.value, wind: uWind.value },
     style,
     look,
+    setThings(list) {
+      for (let i = 0; i < MAX_THINGS; i++) {
+        const t = list[i];
+        if (t) {
+          thingAt[i].value.set(t.x, t.y, t.z, Math.max(0, t.radius));
+          thingHow[i].value.set(Math.max(0, t.clear ?? 0), t.keepSeen ? 1 : 0, 0, 0);
+        } else {
+          thingAt[i].value.set(0, -9999, 0, 0);
+          thingHow[i].value.set(0, 0, 0, 0);
+        }
+      }
+    },
     setSpecies(list) {
       current = list;
       repack();
