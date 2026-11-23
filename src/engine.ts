@@ -189,7 +189,8 @@ export interface Grass {
   /**
    * The field as a whole. `clumpSize`: metres between clump centres.
    * `macro`: how much the colour drifts over tens of metres. `edgeWobble`:
-   * how far (m) a border strays from the map's cells. `depth`: how far a stand's
+   * how far (m) a border strays from the map's cells. `mown`: whether the field is mown in stripes at all (`GrassOptions.mow` says how): off, no
+   * leaf is laid over and there are no stripes. `depth`: how far a stand's
    * roots are as dark as the light's fall through its leaves makes them (by its height, its
    * density and the sun's height), over the species' own `rootShade` alone (0).
    * `fold`: how far a near leaf is folded
@@ -206,7 +207,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -291,6 +292,8 @@ export function createGrass(options: GrassOptions): Grass {
   /** clumpSize, macro, edgeWobble, groundShade. */
   const uLook = uniform(new THREE.Vector4(0.85, 0.3, 0.03, 1));
   const uStripes = uniform(0.16);
+  /** 1 while the field is mown in stripes (`look.mown`), 0 while it is not: then no leaf is laid over. */
+  const uMown = uniform(0);
   /** The eye's height over the ground it looks at (m), as near as the host has said. */
   const uEyeUp = uniform(1.5);
   /** shadow, occlusion. */
@@ -375,7 +378,7 @@ export function createGrass(options: GrassOptions): Grass {
   };
 
   /** The way a species' leaves were laid over at a place (x, z), by how far the mower lays that species. */
-  const layAt = (xz: Vec2, k: Int): Vec2 => (mow ? mow.sample(xz).mul(row(k, 6).w) : vec2(0, 0));
+  const layAt = (xz: Vec2, k: Int): Vec2 => (mow ? mow.sample(xz).mul(row(k, 6).w).mul(uMown) : vec2(0, 0));
   /**
    * Laid grass is lighter seen along its lay (the leaves' upper faces) and
    * darker against it (their cut ends, and the shade between them): the
@@ -441,27 +444,63 @@ export function createGrass(options: GrassOptions): Grass {
   const inShade = () => uShadeTint.div(mix(uShadeTint, uSunTint, 0.62));
 
   /**
-   * How much a place is in one of its species' patches, 0..1: a noise as wide as the patches, cut at the
-   * level that leaves the species' share of the ground above it, with a soft edge.
+   * How much a place is in one of its species' patches, 0..1.
+   *
+   * A patch is a colony: a plant that came in and spread outward from where it landed, so it is a disc,
+   * as old as it is wide, thick at its middle and thinning to single plants at its edge. There are many
+   * small ones and few large, they stand where conditions let them in (so they gather in drifts and
+   * leave other ground clear), and where two meet they merge into one scalloped shape.
+   *
+   * So: the ground is squared off at two sizes, and each square has at most one colony, somewhere in its
+   * middle half, of a radius drawn so that most are small. Whether it is there at all goes by the
+   * species' share and by a slow noise (the drifts). A place is as much in a patch as the nearest colony
+   * makes it; its edge is frayed by pushing the place about a little before measuring.
    */
   const inPatch = (xz: Vec2, k: THREE.Node<"int">): THREE.Node<"float"> => {
     const share = row(k, 10).w;
     const size = row(k, 8).z;
-    // (The noise repeats: one lookup of it is the same four patches over and over, in rows. So three are
-    // taken, each turned and of a size that shares no measure with the others': one as wide as a patch,
-    // pushed about by the next, which is some two patches wide, and one six wide that gathers the patches
-    // into drifts. A finer one frays their edges.)
     const turn = (v: Vec2, c: number, sn: number) => vec2(v.x.mul(c).sub(v.y.mul(sn)), v.x.mul(sn).add(v.y.mul(c)));
+    // (Where colonies get in at all: over some ten patches' breadth, more here and none there.)
+    const driftRaw = noise(turn(xz, 0.454, -0.891).div(size.mul(40)).add(vec2(0.57, 0.29))).r;
+    const drift = smoothstep(float(0.36), float(0.62), driftRaw);
+    // (The fraying: a place is measured from a little to one side of where it is, by a finer noise.)
+    const fray = noise(turn(xz, 0.921, 0.391).div(size.mul(3.1)).add(0.81));
+    const at = xz.add(vec2(fray.g, fray.a).sub(0.5).mul(size).mul(0.5));
+    // (All the colonies there could be cover about a quarter of the ground: for a larger share they are wider.)
+    const often = clamp(share.div(0.24), float(0), float(1)).mul(drift.mul(1.5).add(0.15));
+    const wider = max(float(1), pow(share.div(0.24), float(0.5)));
+    const colonies = (cellM: THREE.Node<"float">, salt: number): THREE.Node<"float"> => {
+      const g = at.div(cellM);
+      const home = floor(g);
+      const f = g.sub(home);
+      // (A colony reaches at most a fifth of a square beyond its own, never three quarters of one, so the four squares nearest the place are all that can hold one that reaches it.)
+      const side = vec2(step(float(0.5), f.x).mul(2).sub(1), step(float(0.5), f.y).mul(2).sub(1));
+      let most = float(0) as THREE.Node<"float">;
+      for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+        const cell = home.add(vec2(side.x.mul(ox), side.y.mul(oy)));
+        const key = cell.add(salt);
+        const centre = cell.add(vec2(hashCell(key), hashCell(key.add(17.3))).mul(0.5).add(0.25));
+        const small = hashCell(key.add(41.7));
+        const reach = min(mix(float(0.1), float(0.45), small.mul(small)).mul(wider), float(0.74));
+        const there = step(hashCell(key.add(73.1)), often);
+        const away = length(g.sub(centre));
+        // (A colony is one plant's offspring: alike all through, with an edge a few leaves wide, and each a
+        // little more or less unlike the stand than the next.)
+        const unlike = mix(float(0.45), float(1), hashCell(key.add(113.9)));
+        most = max(most, there.mul(unlike).mul(float(1).sub(smoothstep(reach.mul(0.78), reach, away))));
+      }
+      return most;
+    };
+    const grown = max(colonies(size.mul(2.2), 3.7), colonies(size.mul(6.3), 91.3)).mul(mix(float(0.85), float(1), fray.r));
+    // Blotches are the other kind: not something that grew, but the ground showing through the grass, so
+    // they have no centres and no edges. Three lookups of the noise, turned and of unrelated sizes (one
+    // alone is the same four shapes in rows), cut where the species' share of the ground lies above.
     const wide = noise(turn(xz, 0.814, 0.581).div(size.mul(9.48)).add(vec2(0.13, 0.71)));
-    const drift = noise(turn(xz, 0.454, -0.891).div(size.mul(24.4)).add(vec2(0.57, 0.29))).r;
     const pushed = xz.add(vec2(wide.r, wide.a).sub(0.5).mul(size).mul(2.2));
-    const one = noise(pushed.div(size.mul(4)).add(0.37)).r;
-    const fray = noise(turn(pushed, 0.921, 0.391).div(size.mul(7.3)).add(0.81)).g;
-    const lumps = one.mul(0.4).add(wide.r.mul(0.26)).add(drift.mul(0.22)).add(fray.mul(0.12));
-    // (The sum is mostly near its middle: the cut runs from 0.64 for a little of the ground to 0.36 for most of it.)
-    const cut = mix(float(0.64), float(0.36), share);
-    // (A patch is thick at its middle and thins out to nothing, and is mottled all through: it has no shore.)
-    return smoothstep(cut.sub(0.07), cut.add(0.1), lumps).mul(mix(float(0.55), float(1), smoothstep(float(0.3), float(0.7), fray))).mul(step(float(0.005), share));
+    const lumps = noise(pushed.div(size.mul(4)).add(0.37)).r.mul(0.4).add(wide.r.mul(0.26)).add(driftRaw.mul(0.22)).add(fray.g.mul(0.12));
+    const cut = mix(float(0.62), float(0.34), share);
+    const blotched = smoothstep(cut.sub(0.07), cut.add(0.1), lumps).mul(mix(float(0.55), float(1), smoothstep(float(0.3), float(0.7), fray.r)));
+    return mix(grown, blotched, row(k, 9).w).mul(step(float(0.005), share));
   };
   /** A place's colour for being in a patch or not, as a multiplier. */
   const patchTint = (xz: Vec2, k: THREE.Node<"int">): Vec3 => mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), inPatch(xz, k));
@@ -1024,7 +1063,8 @@ export function createGrass(options: GrassOptions): Grass {
 
         const tallNode = tall0.toVar();
         // (The grass in a patch is its own height.)
-        tallNode.mulAssign(mix(float(1), row(k, 8).w, inPatch(xz, k)));
+        const patchHere = inPatch(xz, k).toVar();
+        tallNode.mulAssign(mix(float(1), row(k, 8).w, patchHere));
         // Beside shorter grass, or bare ground, a stand comes down to meet it over a stride (by the canopy's
         // picture, which is the mean of the two at their line): never up, so mown turf beside rough stays
         // mown to its edge, and what is left at the line is a step half the height it was.
@@ -1094,7 +1134,7 @@ export function createGrass(options: GrassOptions): Grass {
           .add(lay.mul(LAY_LEAN));
 
         // (What of the sky it sees is worked out half way up it, and is in its colour; the sun at its root and at its tip go with it, for the leaf to shade between.)
-        const colLit = tone(xz, base).mul(patchTint(xz, k)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
+        const colLit = tone(xz, base).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
         // (A fine leaf is broadened for the leaves the view thinned out about it, not for those its species never grows.)
         const broaden = clamp(float(1).div(pow(max(viewShare, float(0.1)), float(0.5))).sub(1), float(0), float(BROADEN_MAX));
         outState.assign(vec4(lean.x, lean.y, tall, gust.sub(0.5).mul(min(windTakes, float(1)))));
@@ -1373,7 +1413,7 @@ export function createGrass(options: GrassOptions): Grass {
   repack();
   const style = { broad: 0, flat: 0 };
   let frame = 0;
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, bare };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const bufferSize = new THREE.Vector2();
@@ -1441,6 +1481,7 @@ export function createGrass(options: GrassOptions): Grass {
       uStyle.value.set(style.broad, style.flat);
       uLook.value.set(Math.max(0.05, look.clumpSize), look.macro, look.edgeWobble, look.groundShade);
       uStripes.value = look.stripes;
+      uMown.value = look.mown ? 1 : 0;
       uShade.value.set(look.shadow, look.occlusion);
       uDetail.value.set(look.fold, look.relief, look.leafPixels);
       uLight.value = look.depth;

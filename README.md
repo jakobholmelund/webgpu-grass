@@ -99,6 +99,17 @@ grass.update(renderer, camera, timeSeconds, lookAt);
   colour and height (`patch`, `patchSize`, `patchTint`, `patchTall`):
   annual meadow-grass in a bent green, green left in a parched lawn. They
   are a tint and a height, not other plants: no clover leaf is drawn.
+  `patchKind` says which of two things they are. Colonies: discs grown
+  out from where a plant landed, many small and few large, alike within
+  and each a little unlike the next, gathered in drifts (annual
+  meadow-grass on greens was measured at 10 cm to 2.5 m across, 50 cm on
+  average: Poole and Johnston, WSU). Blotches: odd shapes with hazy edges,
+  as drought makes. Neither yet follows the ground: real drought takes the
+  crowns and the slopes that face the sun, and colonies the shade and the
+  wet hollows.
+- **Mowing stripes** are off unless `look.mown` is set: then leaves are
+  laid one way and back in passes (`mowStripes`), and the stripes are
+  their lean.
 
 No source gave leaf colours species against species, so those are by eye.
 

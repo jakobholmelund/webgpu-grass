@@ -23,14 +23,14 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b28";
+const LAB_BUILD = "b30";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
   version: 1;
   species: Species[];
   style: { broad: number; flat: number };
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes?: number };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes?: number; mown?: boolean };
 }
 
 function fail(text: string): never {
@@ -224,7 +224,7 @@ async function start() {
     version: 1,
     species: cloneSpecies(species),
     style: { ...grass.style },
-    look: { clumpSize: grass.look.clumpSize, macro: grass.look.macro, edgeWobble: grass.look.edgeWobble, groundShade: grass.look.groundShade, stripes: grass.look.stripes },
+    look: { clumpSize: grass.look.clumpSize, macro: grass.look.macro, edgeWobble: grass.look.edgeWobble, groundShade: grass.look.groundShade, stripes: grass.look.stripes, mown: grass.look.mown },
   });
   /** Take a preset in; the reason if it cannot be. */
   const load = (value: unknown): string | null => {
@@ -236,7 +236,7 @@ async function start() {
     if (!num(p.style, ["broad", "flat"]) || !num(p.look, ["clumpSize", "macro", "edgeWobble", "groundShade"])) return "style or look is missing a number";
     species = cloneSpecies(p.species!);
     Object.assign(grass.style, { broad: p.style!.broad, flat: p.style!.flat });
-    Object.assign(grass.look, { clumpSize: p.look!.clumpSize, macro: p.look!.macro, edgeWobble: p.look!.edgeWobble, groundShade: p.look!.groundShade, stripes: Number.isFinite(p.look!.stripes) ? p.look!.stripes : 0.16 });
+    Object.assign(grass.look, { clumpSize: p.look!.clumpSize, macro: p.look!.macro, edgeWobble: p.look!.edgeWobble, groundShade: p.look!.groundShade, stripes: Number.isFinite(p.look!.stripes) ? p.look!.stripes : 0.16, mown: p.look!.mown === true });
     grass.setSpecies(species);
     rebuildSpecies();
     refreshNumbers();
@@ -310,6 +310,7 @@ async function start() {
   shownAs(fieldPanel, grass.look, "groundShade", 100, 50, 110, "ground under it (%)").onChange(save);
   // How the plot was mown: it shows on the species the mower lays over (Species, Behaviour).
   const mowPanel = sceneGui.addFolder("Mowing");
+  mowPanel.add(grass.look, "mown").name("mown in stripes").onChange(save);
   mowPanel.add(mow, "width", 0.4, 6).name("pass width (m)").decimals(1);
   mowPanel.add(mow, "heading", 0, 180, 1).name("heading (°)");
   shownAs(mowPanel, grass.look, "stripes", 100, 0, 40, "stripes (%)").onChange(save);
@@ -597,6 +598,7 @@ async function start() {
     picturePanel.add(s, "textureCutout").name("cut to its outline").onChange(changed);
     // Patches: another grass come in, or this one doing worse, over part of its ground.
     const patchPanel = folder("Patches");
+    patchPanel.add(s, "patchKind", ["colonies", "blotches"]).name("they are").onChange(changed);
     shownAs(patchPanel, s, "patch", 100, 0, 100, "share of the ground (%)").onChange(changed);
     shownAs(patchPanel, s, "patchSize", 100, 5, 400, "across (cm)").onChange(changed);
     shownAs(patchPanel, s, "patchTall", 100, 30, 200, "height there (%)").onChange(changed);
@@ -626,7 +628,7 @@ async function start() {
   refreshShow();
 
   // The gallery: ten scenes, each one press. A scene sets everything the lab has.
-  const LOOK_AS_MADE = { depth: 0.5, clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45 };
+  const LOOK_AS_MADE = { mown: false, depth: 0.5, clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45 };
   const gallery = el<HTMLDialogElement>("gallery");
   const at = { scene: -1 };
   const refreshCaption = () => {
@@ -651,6 +653,7 @@ async function start() {
       mow.width = sc.mow[0];
       mow.heading = sc.mow[1];
       grass.look.stripes = sc.mow[2];
+      grass.look.mown = true;
     }
     Object.assign(view, sc.view);
     [light.sunAzimuth, light.sunElevation] = sc.sun;

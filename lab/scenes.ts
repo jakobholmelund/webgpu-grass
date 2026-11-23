@@ -50,7 +50,7 @@ export const SCENES: Scene[] = [
     species: turf(),
     plot: BENT, row: BENT,
     view: { x: 2, z: 16, eye: 0.3, yaw: 0.3, pitch: -0.12, fov: 44 },
-    sun: [80, 9], wind: [70, 1], mow: [1.4, 20, 0.34],
+    sun: [80, 9], wind: [70, 1],
   },
   {
     id: "striped-fairway",
@@ -68,7 +68,7 @@ export const SCENES: Scene[] = [
     species: turf(),
     plot: BERMUDA, row: BERMUDA,
     view: { x: -2, z: 12, eye: 0.22, yaw: -0.2, pitch: -0.1, fov: 46 },
-    sun: [180, 74], wind: [120, 2.5], mow: [2.5, 60, 0.2],
+    sun: [180, 74], wind: [120, 2.5],
   },
   {
     id: "links-in-seed",
@@ -95,23 +95,23 @@ export const SCENES: Scene[] = [
     species: turf(),
     plot: -1, row: RYE_ROUGH,
     view: { x: 3.5, z: 2, eye: 0.6, yaw: -1.25, pitch: -0.1, fov: 52 },
-    sun: [200, 30], wind: [70, 3], mow: [2.5, 12, 0.16],
+    sun: [200, 30], wind: [70, 3],
   },
   {
     id: "from-above",
     title: "The whole plot from above",
-    blurb: "Fourteen metres up: no leaves are drawn from here, and the ground carries every species' colour and stripe.",
+    blurb: "Fourteen metres up: no leaves are drawn from here, and the ground carries every species' colour and its patches.",
     species: turf(),
     plot: -1, row: BENT,
     view: { x: 2, z: 14, eye: 14, yaw: 0.25, pitch: -1.0, fov: 55 },
-    sun: [240, 40], wind: [70, 3], mow: [2.5, 12, 0.1],
+    sun: [240, 40], wind: [70, 3],
   },
   {
     id: "a-dry-summer",
     title: "A dry summer",
     blurb: "A lawn after six weeks without rain: straw, with the patches that still hold water left green.",
     species: turf((list) => {
-      Object.assign(list[BLUEGRASS], { name: "Parched lawn", dry: 0.22, color: "#a8974c", tipTint: [1.12, 1.04, 0.8], density: 0.8, height: 0.05, sheen: 0.1, rootShade: 0.55, variation: 0.3, patch: 0.4, patchSize: 1.4, patchTint: [0.58, 1.0, 0.66], patchTall: 1.15 });
+      Object.assign(list[BLUEGRASS], { name: "Parched lawn", dry: 0.22, color: "#a8974c", tipTint: [1.12, 1.04, 0.8], density: 0.8, height: 0.05, sheen: 0.1, rootShade: 0.55, variation: 0.3, patchKind: "blotches", patch: 0.4, patchSize: 1.4, patchTint: [0.58, 1.0, 0.66], patchTall: 1.15 });
     }),
     plot: BLUEGRASS, row: BLUEGRASS,
     view: { x: -4, z: -12, eye: 0.35, yaw: 2.6, pitch: -0.14, fov: 48 },

@@ -74,6 +74,14 @@ export interface Species {
   // Patches: no stand is one thing. Part of its ground is another grass that came in (annual meadow-grass
   // in a bent green, brighter and a little taller), or the same grass doing worse (drought, which browns
   // a lawn in patches and not evenly), or something low and dark among it. One kind of patch to a species.
+  /**
+   * What the patches are. "colonies": plants that came in and spread, each a disc grown out from where it
+   * landed, alike within itself and a little unlike the next (annual meadow-grass in a bent green was
+   * measured at 10 cm to 2.5 m across, 50 cm on average: Poole and Johnston; clover likewise). "blotches":
+   * the stand's own grass doing worse or better where the ground makes it, in odd shapes with hazy edges
+   * (drought, which greenkeepers call a camouflage pattern).
+   */
+  patchKind: PatchKind;
   /** The share of the stand's ground that is in patches, 0..1 (0: none). */
   patch: number;
   /** How far across a patch is, roughly (m). */
@@ -113,6 +121,7 @@ export type TextureMode = "detail" | "color";
 /** Rows in the table. A map's species numbers are below this; `NO_GRASS` is not. */
 export const MAX_SPECIES = 8;
 /** Four numbers to a slot, this many slots to a species. */
+export type PatchKind = "colonies" | "blotches";
 export const SPECIES_SLOTS = 11;
 
 const TIP_CODE: Record<TipShape, number> = { point: 0, cut: 1, square: 2 };
@@ -168,14 +177,14 @@ export function packSpecies(
     const under = ground[k] ?? null;
     table[row + 8].set(under ? s.groundDetail : 0, Math.max(0.05, s.groundTile), Math.max(0.02, s.patchSize), s.patchTall);
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
-    table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, 0);
+    table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, s.patchKind === "blotches" ? 1 : 0);
   }
 }
 
 /** A plain leaf: what a species written before leaves had pictures is given. */
 const NO_TEXTURE = { leafTexture: "", textureMode: "detail" as TextureMode, textureStrength: 1, textureCutout: false };
 /** What a species written before these were settings is given: a plain leaf, standing as it grew. */
-const NO_PATCHES = { patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
+const NO_PATCHES = { patchKind: "colonies" as PatchKind, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
 const ADDED_LATER = { ...NO_TEXTURE, ...NO_PATCHES, lay: 0, groundDetail: 1, groundTile: 0.6 };
 
 /**
@@ -312,7 +321,7 @@ export const TURF_SPECIES: Species[] = [
     splay: 0.25, droop: 0.2, stiffness: 1, disorder: 0.25, color: "#4c8a3a", tipTint: [1.06, 1.08, 0.94], rootShade: 0.74, variation: 0.24,
     dry: 0.005, sheen: 0, lay: 1, groundTile: 0.35,
     // (Annual meadow-grass in it, as nearly every bent green has within a few years: brighter, not bluish.)
-    patch: 0.2, patchSize: 0.3, patchTint: [1.2, 1.22, 0.8], patchTall: 1.12,
+    patch: 0.16, patchSize: 0.5, patchTint: [1.2, 1.22, 0.8], patchTall: 1.12,
   }),
   turf("Perennial rye, fairway", 1, {
     height: 0.013, heightSpread: 0.12, density: 1.5, width: 0.0026, widthSpread: 0.001, tip: "cut",
@@ -341,6 +350,6 @@ export const TURF_SPECIES: Species[] = [
     splay: 0.8, droop: 0.9, stiffness: 0.85, clump: 0.3, disorder: 0.6, color: "#39793d", tipTint: [1.08, 1.08, 0.96], rootShade: 0.55,
     variation: 0.18, dry: 0.01, sheen: 0.5, lay: 0.4,
     // (Something low and dark among it: clover, in a lawn nobody sprays.)
-    patch: 0.14, patchSize: 0.5, patchTint: [0.68, 0.94, 0.7], patchTall: 0.7,
+    patch: 0.12, patchSize: 0.66, patchTint: [0.68, 0.94, 0.7], patchTall: 0.7,
   }),
 ];
