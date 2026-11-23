@@ -1,0 +1,22 @@
+{
+  "name": "webgpu-grass",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Grass for three.js on WebGPU, written in TSL, with a lab to set it in.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --open /lab/",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/boundary.test.mjs"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7"
+  }
+}

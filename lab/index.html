@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Grass lab</title>
+    <link rel="stylesheet" href="./lab.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <header id="bar">
+      <div class="group paper">
+        <span id="mark">Grass lab</span>
+        <button class="go" id="open-gallery" type="button" title="Ten scenes to start from (G)">Gallery</button>
+        <div class="seg" id="show" role="group" aria-label="What to look at"></div>
+      </div>
+      <div class="group paper" id="eye-group">
+        <div class="seg" id="eye" role="group" aria-label="Eye height"></div>
+      </div>
+      <div class="group paper" id="hour-group">
+        <div class="seg" id="hour" role="group" aria-label="Time of day"></div>
+      </div>
+      <div class="group paper" id="bench-group" hidden>
+        <button class="plain" id="another" type="button" title="Another plant of the same kind">Another one</button>
+      </div>
+      <span class="spacer"></span>
+      <div class="group paper">
+        <button class="plain" id="open-photo" type="button" aria-pressed="true" title="A photograph of this grass, beside the drawn one" hidden>Photo</button>
+        <button class="plain" id="open-preset" type="button" title="Everything set here as JSON, to keep or to hand to a game">Preset</button>
+        <button class="plain" id="open-bench" type="button" title="Time the grass over five fixed views">Measure</button>
+        <button class="plain" id="copy-view" type="button" title="Copy a link that opens the lab on exactly this view, with the species as they are now">Share view</button>
+        <button class="plain" id="bare" type="button" aria-pressed="false" title="Put the panels away (H)">Picture only</button>
+      </div>
+    </header>
+
+    <nav id="rail" class="paper" aria-label="Species">
+      <h2>Species</h2>
+      <ul id="species"></ul>
+      <div class="foot">
+        <button class="plain" id="fill" type="button" aria-pressed="false" title="Grow only this species over the whole plot">Fill the plot with it</button>
+      </div>
+    </nav>
+
+    <aside id="inspector" class="paper" aria-label="Settings">
+      <div class="tabs">
+        <div class="seg" id="tabs" role="group" aria-label="What to set">
+          <button type="button" data-tab="species" aria-pressed="true">Species</button>
+          <button type="button" data-tab="scene" aria-pressed="false">Scene</button>
+        </div>
+      </div>
+      <div class="body" id="tab-species">
+        <div id="who">
+          <span class="swatch" id="who-swatch"></span>
+          <input id="who-name" type="text" maxlength="40" spellcheck="false" aria-label="The species' name" />
+        </div>
+        <div id="species-gui"></div>
+      </div>
+      <div class="body" id="tab-scene" hidden>
+        <div id="scene-gui"></div>
+      </div>
+    </aside>
+
+    <section id="caption" class="paper" aria-label="The scene" hidden>
+      <div class="words">
+        <h2 id="caption-title"></h2>
+        <p id="caption-blurb"></p>
+      </div>
+      <div class="turn">
+        <button class="plain" id="caption-prev" type="button" title="The scene before ([)" aria-label="The scene before">‹</button>
+        <button class="plain" id="caption-all" type="button" title="All the scenes (G)"><span id="caption-count"></span></button>
+        <button class="plain" id="caption-next" type="button" title="The next scene (])" aria-label="The next scene">›</button>
+      </div>
+    </section>
+
+    <figure id="photo" class="paper" hidden>
+      <img id="photo-img" alt="" />
+      <figcaption>
+        <span class="tag">The real thing</span>
+        <span id="photo-shows"></span>
+        <a id="photo-credit" target="_blank" rel="noopener noreferrer"></a>
+      </figcaption>
+      <div class="turn">
+        <button class="plain" id="photo-big" type="button" title="Larger, and back">⤢</button>
+        <button class="plain" id="photo-close" type="button" title="Put the photograph away">×</button>
+      </div>
+    </figure>
+
+    <div id="status" role="status">
+      <div id="status-line">Starting…</div>
+      <div class="keys" id="status-keys"></div>
+    </div>
+
+    <dialog id="gallery" class="sheet" aria-labelledby="gallery-title">
+      <header>
+        <div>
+          <h1 id="gallery-title">What grass can be</h1>
+          <p>Ten scenes, drawn live in this window from the same few numbers. Pick one, then walk about in it and change anything.</p>
+        </div>
+        <button class="plain" id="gallery-close" type="button">Close</button>
+      </header>
+      <div id="gallery-cards"></div>
+    </dialog>
+
+    <dialog id="preset" class="sheet" aria-labelledby="preset-title">
+      <h1 id="preset-title">Preset</h1>
+      <p>The species, the style and the field as JSON: copy it to keep it, or paste one here and load it. Pictures brought in from files are not in it, only their names.</p>
+      <textarea id="preset-text" spellcheck="false" aria-label="Preset as JSON"></textarea>
+      <div class="row">
+        <button class="go" id="preset-load" type="button">Load this</button>
+        <button class="plain" id="preset-copy" type="button">Copy</button>
+        <button class="plain" id="preset-reset" type="button">Starter species</button>
+        <span class="note" id="preset-note"></span>
+        <button class="plain" id="preset-close" type="button">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="bench" class="sheet" aria-labelledby="bench-title">
+      <h1 id="bench-title">What a frame costs</h1>
+      <p>The graphics card's own time for the grass and the ground, over five fixed views: its compute passes and its drawing, in milliseconds a frame. A frame at 60 a second has 16.7 ms.</p>
+      <pre id="bench-text">Measuring…</pre>
+      <div class="row">
+        <button class="plain" id="bench-copy" type="button">Copy</button>
+        <span class="note" id="bench-note"></span>
+        <button class="plain" id="bench-close" type="button">Close</button>
+      </div>
+    </dialog>
+
+    <div id="fail"><p id="fail-text"></p></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
