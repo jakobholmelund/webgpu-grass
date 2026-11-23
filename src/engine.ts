@@ -42,6 +42,8 @@ export interface GrassLayer {
 /** A finer square of fine leaves still, drawn only while the eye is within `within` metres of where it is centred (in a 50 degree view 1,200 pixels tall; further in a closer or larger one). */
 export interface NearLayer extends GrassLayer {
   within: number;
+  /** Only stands shorter than this (m) grow in it: a square fine enough for a green's shoots is far more leaves than rough has. */
+  below?: number;
 }
 
 export interface GrassLayers {
@@ -73,6 +75,8 @@ export interface GrassLayers {
  * has. From standing height that is far more than can be seen, so each is
  * drawn only while the eye is within a stride or two of it. Their plants
  * carry up to six leaves, for a species whose density is set above 1.
+ * And a third, 2.2 mm apart, for close-mown turf seen from where a ball lies:
+ * a green has some twenty shoots to the square centimetre.
  */
 export const DEFAULT_LAYERS: GrassLayers = {
   far: { count: 250, spacing: 0.22, blades: 8, range: 48 },
@@ -82,6 +86,9 @@ export const DEFAULT_LAYERS: GrassLayers = {
   near: [
     { count: 332, spacing: 0.0051, blades: 6, range: 0.845, within: 1.2 },
     { count: 332, spacing: 0.0102, blades: 6, range: 1.69, within: 2.6 },
+    // (A putting green's own density: 20 shoots to the square centimetre, 2.2 mm apart, about the eye
+    // when it is down where a ball lies. Only close-mown turf grows in it.)
+    { count: 332, spacing: 0.0022, blades: 6, range: 0.365, within: 0.5, below: 0.03 },
   ],
   farAhead: 21,
   peakAhead: 3.0,
@@ -1322,7 +1329,9 @@ export function createGrass(options: GrassOptions): Grass {
           .mul(float(1).sub(uStyle.x.mul(0.6)));
         const viewShare = viewShare0.mul(uGate);
         // (A density up to 1 is the share of plants that grow; above it every plant grows, with more leaves: see `leaf`.)
-        const keepShare = viewShare.mul(min(density, float(1)));
+        const below = (L as NearLayer).below ?? 0;
+        const shortEnough = below > 0 ? float(1).sub(smoothstep(float(below * 0.6), float(below), tall0)) : float(1);
+        const keepShare = viewShare.mul(min(density, float(1))).mul(shortEnough);
         const thin = fine
           ? step(hashCell(hcell.add(91.7)), keepShare)
           : step(r1, float(1).sub(smoothstep(float(L.range * 0.3), float(L.range * 0.8), dist).mul(0.55))).mul(step(hashCell(hcell.add(91.7)), density));
