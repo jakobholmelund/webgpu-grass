@@ -43,6 +43,11 @@ export function standTone(species: Pick<Species, "height" | "density" | "rootSha
   return rootDark + (1 - rootDark) * STAND_MEAN;
 }
 
+/**
+ * A square of leaves is worked out and drawn while the nearest ground in the picture is within this share of
+ * its reach: short of all of it, since the ground is not level and may rise to meet the eye.
+ */
+const SEEN_MARGIN = 0.85;
 /** How many things can lie in the grass at once (see `Grass.setThings`). */
 export const MAX_THINGS = 4;
 
@@ -314,6 +319,8 @@ export interface Grass {
    * `macro`: how much the colour drifts over tens of metres. `edgeWobble`:
    * how far (m) a border strays from the map's cells. `leafShadows`: whether the leaves about the eye shadow each other and the ground (they are
    * drawn once more each frame, from the sun: it costs about as much again as drawing them).
+   * `amount`: how much of the grass is drawn, 0.05 to 1 (the plants left are broader for the ones
+   * left out, so the field keeps its cover: a host's own setting for a slower machine).
    * `brightest`: no leaf is drawn brighter than this (a host that blooms what is bright sets it
    * under its threshold, or a back-lit leaf is a lamp).
    * `site`: how far the grass's colour follows the lie of the ground, lusher in the hollows
@@ -336,7 +343,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; amount: number; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -399,8 +406,11 @@ export interface Grass {
   groundShade(xz: Vec2): Vec3;
   /** The light a leaf takes on ground with this normal, for the same reason. */
   light(normal: Vec3): Vec3;
-  /** Plants computed each frame, and the most leaves they can stand up as. */
-  stats: { plants: number; leaves: number };
+  /**
+   * The plants there are in all, the most leaves they can stand up as, and `computed`: how many plants
+   * the last frame worked out (the squares whose leaves could be in the picture; the rest were left alone).
+   */
+  stats: { plants: number; leaves: number; computed: number };
   dispose(): void;
 }
 
@@ -580,6 +590,7 @@ export function createGrass(options: GrassOptions): Grass {
   /** How far the grass's colour follows the lie of the ground (`look.site`). */
   const uSite = uniform(0.5);
   const uBrightest = uniform(4);
+  const uAmount = uniform(1);
   /** fold, relief, leafPixels. */
   const uDetail = uniform(new THREE.Vector3(1, 1, 1));
   const bare = new THREE.Color("#8a7355");
@@ -1503,7 +1514,8 @@ export function createGrass(options: GrassOptions): Grass {
         const fadeDist = fine ? distance(xz, uFocus) : dist;
         const viewShare0 = (fine ? leavesAt(fromThick(xz), L.range).mul(leafSeen(row(k, 1).x.add(row(k, 1).y.mul(0.5)), dist)) : pow(clamp(float(1).sub(fadeDist.sub(L.range * 0.12).div(L.range * 0.88)), float(0), float(1)), float(0.85)))
           .mul(mix(float(1), mix(float(0.74), float(1), chaosThick), disorder))
-          .mul(float(1).sub(uStyle.x.mul(0.6)));
+          .mul(float(1).sub(uStyle.x.mul(0.6)))
+          .mul(uAmount);
         const viewShare = viewShare0.mul(uGate);
         // (A density up to 1 is the share of plants that grow; above it every plant grows, with more leaves: see `leaf`.)
         const below = (L as NearLayer).below ?? 0;
@@ -1884,7 +1896,8 @@ export function createGrass(options: GrassOptions): Grass {
   repack();
   const style = { broad: 0, flat: 0 };
   let frame = 0;
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, bare };
+  const stats = { plants: all.reduce((n, l) => n + l.total, 0), leaves: all.reduce((n, l) => n + l.leaves, 0), computed: 0 };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, amount: 1, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const shadowAt = new THREE.Vector3();
@@ -1972,6 +1985,7 @@ export function createGrass(options: GrassOptions): Grass {
       uMown.value = look.mown ? 1 : 0;
       uSite.value = look.site;
       uBrightest.value = look.brightest;
+      uAmount.value = Math.min(1, Math.max(0.05, look.amount));
       uShade.value.set(look.shadow, look.occlusion);
       uDetail.value.set(look.fold, look.relief, look.leafPixels);
       uLight.value = look.depth;
@@ -1989,6 +2003,14 @@ export function createGrass(options: GrassOptions): Grass {
       else uThickAt.value.set(eye.x, eye.y, eye.z, uEyeUp.value);
       // Each square of fine leaves stands about the eye, a little ahead of it (`LEAF_AHEAD`), and is there at
       // all only if the eye is near enough the ground for any of its leaves to be within its reach.
+      // (The nearest ground in the picture: where the bottom of the picture meets the ground, for a camera
+      // that looks out over level ground from its height. Nearer than that there is ground, under the eye and
+      // behind the picture's edge, and no leaf on it is seen: a camera a man's height up that looks ahead
+      // has no ground in its picture for three strides, and a square of leaves that reaches two has none
+      // in it. Looking straight down, or with no such camera, it is the ground under the eye.)
+      const fovHalf = Math.atan(1 / Math.max(1e-3, camera.projectionMatrix.elements[5]));
+      const down = Math.asin(Math.min(1, Math.max(-1, -fwd.y))) + fovHalf;
+      const nearestSeen = down <= 0.02 ? Infinity : uEyeUp.value / Math.sin(Math.min(Math.PI / 2, down));
       for (const l of all) {
         if (!l.fine) continue;
         if (lookAt?.focus) {
@@ -1996,7 +2018,7 @@ export function createGrass(options: GrassOptions): Grass {
           l.uGate.value = 1;
         } else {
           l.uFocus.value.set(eye.x + f.x * l.range * LEAF_AHEAD, eye.z + f.y * l.range * LEAF_AHEAD);
-          l.uGate.value = uEyeUp.value < l.range * LEAF_REACH ? 1 : 0;
+          l.uGate.value = nearestSeen < l.range * LEAF_REACH * SEEN_MARGIN ? 1 : 0;
         }
       }
       // The widest square is there only as far as leaves can be seen beyond `mid`'s reach: by where the
@@ -2012,6 +2034,7 @@ export function createGrass(options: GrassOptions): Grass {
         uLeafReach.value = midReach + (wide.range * LEAF_REACH - midReach) * wide.uGate.value;
       }
       for (const l of all) l.mesh.visible = l.fine ? shown.leaves && l.uGate.value > 0 : shown.tufts;
+      stats.computed = all.reduce((n, l) => n + (l.mesh.visible ? l.total : 0), 0);
       const passes = all.filter((l) => l.mesh.visible).flatMap((l) => [l.reset, l.compute]);
       if (passes.length > 0) renderer.compute(passes);
       // The leaves' shadows: the squares nearest the eye, drawn from the sun.
@@ -2055,7 +2078,7 @@ export function createGrass(options: GrassOptions): Grass {
     groundColor,
     groundShade,
     light,
-    stats: { plants: all.reduce((n, l) => n + l.total, 0), leaves: all.reduce((n, l) => n + l.leaves, 0) },
+    stats,
     dispose() {
       // The compute passes own pipelines and bind groups in the renderer: none is freed unless disposed by name.
       for (const l of all) {
