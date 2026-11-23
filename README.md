@@ -198,6 +198,11 @@ The shaders call them in the compute pass and in fragment shaders both, so
 a texture in one is looked up at a set level. The lab's "clouds' shadows"
 is one: twenty lines in `lab/main.ts`.
 
+The leaves are thickest about the eye and thin out from it. A picture of
+something on the ground some way off (a ball at a golfer's feet, seen from
+four metres behind) wants them about the thing instead:
+`grass.update(renderer, camera, time, { x, y, z, focus: true })`.
+
 A course that already keeps a field for each of its surfaces has its map
 already. `fieldMap({ fields, species, x0, z0, width, depth, edgePerLead })`
 takes those textures, a channel to a surface, and says which species each

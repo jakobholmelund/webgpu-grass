@@ -357,13 +357,16 @@ export interface Grass {
    */
   bakeGround(renderer: THREE.WebGPURenderer, row: number): Promise<void>;
   /**
+   * (With `lookAt.focus`, the leaves are thickest about that place and not about the eye: a picture
+   * of something on the ground some way off, a ball at a golfer's feet seen from behind, has its grass
+   * where the thing is. They thin out from there as they otherwise do from the eye.)
    * Once a frame, before rendering. `lookAt` is where the picture's middle
    * meets the ground, if the host knows it: the fine leaves are centred
    * there. Without it they are centred a few metres ahead of the eye. With
    * the ground's height there too (`y`), the finest squares know how far
    * off they are, and are drawn only when close.
    */
-  update(renderer: THREE.WebGPURenderer, camera: THREE.Camera, timeS: number, lookAt?: { x: number; y?: number; z: number }): void;
+  update(renderer: THREE.WebGPURenderer, camera: THREE.Camera, timeS: number, lookAt?: { x: number; y?: number; z: number; focus?: boolean }): void;
   /** Which of it is drawn: the far tufts, the fine leaves. */
   show: { tufts: boolean; leaves: boolean };
   /**
@@ -429,6 +432,10 @@ export function createGrass(options: GrassOptions): Grass {
   const shadowNodes: THREE.TextureNode[] = [];
   const uSunMat = uniform(new THREE.Matrix4());
   const uShadowOn = uniform(0);
+  /** Where the leaves are thickest, and thin out from: the eye (x, y, z, and its height over the ground in w), or the place the host says the picture is of (w 0). */
+  const uThickAt = uniform(new THREE.Vector4());
+  /** How far a place is from where the leaves are thickest. */
+  const fromThick = (xz: Vec2): THREE.Node<"float"> => length(vec3(xz.x.sub(uThickAt.x), uThickAt.w, xz.y.sub(uThickAt.z)));
   // What lies in the grass: each a sphere (its centre and radius), and how the grass is about it (x: cleared to this far, y: kept in sight).
   const thingAt = Array.from({ length: MAX_THINGS }, () => uniform(new THREE.Vector4(0, -9999, 0, 0)));
   const thingHow = Array.from({ length: MAX_THINGS }, () => uniform(new THREE.Vector4(0, 0, 0, 0)));
@@ -503,7 +510,7 @@ export function createGrass(options: GrassOptions): Grass {
     const nearest = (node as unknown as Vec4).x;
     // (Known only as far as the leaves that are drawn into the picture go: they thin out away from the eye
     // as their square does, and past them the picture is empty, which is not the same as sunlit.)
-    const casters = leavesAt(length(vec3(at.x.sub(uCamPos.x), uEyeUp, at.z.sub(uCamPos.z))), SHADOW_CAST_RANGE_M);
+    const casters = leavesAt(fromThick(vec2(at.x, at.z)), SHADOW_CAST_RANGE_M);
     const known = float(1).sub(smoothstep(float(0.8), float(0.98), max(abs(clip.x), abs(clip.y)))).mul(uShadowOn).mul(casters);
     // (In shadow by degrees over a little depth, not all at once: a leaf swaying across a shadow's edge
     // darkens as it goes in, where one that is either lit or not twinkles.)
@@ -883,7 +890,7 @@ export function createGrass(options: GrassOptions): Grass {
     const away = length(vec3(xz.x.sub(uCamPos.x), uEyeUp, xz.y.sub(uCamPos.z)));
     let gone = float(1) as THREE.Node<"float">;
     for (const sq of fineSquares) {
-      const share = leavesAt(away, sq.range).mul(sq.uGate);
+      const share = leavesAt(fromThick(xz), sq.range).mul(sq.uGate);
       gone = gone.mul(float(1).sub(share));
     }
     return float(1).sub(gone).mul(leafSeen(wide, away));
@@ -1461,7 +1468,7 @@ export function createGrass(options: GrassOptions): Grass {
         // outward, none at its range (no smoothstep: its flat ends would show
         // as a ring where the thinning starts and another where it ends).
         const fadeDist = fine ? distance(xz, uFocus) : dist;
-        const viewShare0 = (fine ? leavesAt(dist, L.range).mul(leafSeen(row(k, 1).x.add(row(k, 1).y.mul(0.5)), dist)) : pow(clamp(float(1).sub(fadeDist.sub(L.range * 0.12).div(L.range * 0.88)), float(0), float(1)), float(0.85)))
+        const viewShare0 = (fine ? leavesAt(fromThick(xz), L.range).mul(leafSeen(row(k, 1).x.add(row(k, 1).y.mul(0.5)), dist)) : pow(clamp(float(1).sub(fadeDist.sub(L.range * 0.12).div(L.range * 0.88)), float(0), float(1)), float(0.85)))
           .mul(mix(float(1), mix(float(0.74), float(1), chaosThick), disorder))
           .mul(float(1).sub(uStyle.x.mul(0.6)));
         const viewShare = viewShare0.mul(uGate);
@@ -1945,12 +1952,19 @@ export function createGrass(options: GrassOptions): Grass {
       uBare.value.set(look.bare.r, look.bare.g, look.bare.b);
       far.uFocus.value.set(eye.x + f.x * layers.farAhead, eye.z + f.y * layers.farAhead);
       if (lookAt?.y !== undefined) uEyeUp.value = Math.max(0, eye.y - lookAt.y);
+      if (lookAt?.focus) uThickAt.value.set(lookAt.x, lookAt.y ?? eye.y - uEyeUp.value, lookAt.z, 0);
+      else uThickAt.value.set(eye.x, eye.y, eye.z, uEyeUp.value);
       // Each square of fine leaves stands about the eye, a little ahead of it (`LEAF_AHEAD`), and is there at
       // all only if the eye is near enough the ground for any of its leaves to be within its reach.
       for (const l of all) {
         if (!l.fine) continue;
-        l.uFocus.value.set(eye.x + f.x * l.range * LEAF_AHEAD, eye.z + f.y * l.range * LEAF_AHEAD);
-        l.uGate.value = uEyeUp.value < l.range * LEAF_REACH ? 1 : 0;
+        if (lookAt?.focus) {
+          l.uFocus.value.set(lookAt.x, lookAt.z);
+          l.uGate.value = 1;
+        } else {
+          l.uFocus.value.set(eye.x + f.x * l.range * LEAF_AHEAD, eye.z + f.y * l.range * LEAF_AHEAD);
+          l.uGate.value = uEyeUp.value < l.range * LEAF_REACH ? 1 : 0;
+        }
       }
       // The widest square is there only as far as leaves can be seen beyond `mid`'s reach: by where the
       // broadest species' leaf is down to half a pixel (times `leafPixels`) in this picture.
