@@ -54,7 +54,9 @@ export const MAX_TRAIL = 24;
 const TRAIL_GAP_M = 1.8;
 /** Grass a thing went through is back up after this long (s), and at its lowest this share of its height. */
 const TRAIL_GONE_S = 16;
-const TRAIL_TALL = 0.65;
+const TRAIL_TALL = 0.5;
+/** How far over the grass in a track is laid, the way the thing went (as a lean: 1 is nearly flat). */
+const TRAIL_LAY = 0.85;
 /** A stir of the air moves the grass within this far (m) of it. */
 const STIR_REACH_M = 0.32;
 /** How many things can lie in the grass at once (see `Grass.setThings`). */
@@ -574,6 +576,10 @@ export function createGrass(options: GrassOptions): Grass {
         const crush = float(1).sub(smoothstep(r.mul(0.25), r.mul(1.45), d)).mul(spring);
         const ring = float(1).sub(smoothstep(r.mul(0.35), r.mul(1.9), d)).mul(smoothstep(float(0.01), r.mul(0.45), d)).mul(spring);
         push.addAssign(off.div(max(d, float(1e-4))).mul(ring).mul(0.18));
+        // (And along the track the grass is laid over the way the thing went, as a roller lays it: it is
+        // the laid leaves, showing their sides to the light, that make a track seen; leaves a third shorter
+        // in a lane a hand wide are not.)
+        push.addAssign(along.div(max(pow(span, float(0.5)), float(1e-4))).mul(crush).mul(TRAIL_LAY).mul(step(span, float(TRAIL_GAP_M * TRAIL_GAP_M))));
         tall.assign(min(tall, mix(float(1), float(TRAIL_TALL), crush)));
       });
     });
