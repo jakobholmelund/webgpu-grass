@@ -28,7 +28,7 @@ Then open the address it prints (the lab is at `/lab/`). Drag to look, W A S D t
 height. `?plot=3` fills the plot with one species (its row), `?eye=0.15`
 sets the eye height, `?fresh` ignores what the lab kept from last time.
 
-A first visit opens on the *Gallery* (G): ten scenes, each one press, each
+A first visit opens on the *Gallery* (G): fourteen scenes, each one press, each
 setting everything the lab has (the species, what grows on the plot, the
 eye, the hour, the wind, the mowing, the style). The scene that is on is
 named at the foot of the picture, with the ones either side a press away
@@ -81,6 +81,26 @@ grass.update(renderer, camera, timeSeconds, lookAt);
   `grass.light(normal)` give it the colour and light the grass takes, so the
   two are one colour and nothing shows where the leaves thin out.
 
+## Heights of cut
+
+`TURF_SPECIES` are a golf course's surfaces at heights in real use:
+
+| Surface | Here | In use |
+| --- | --- | --- |
+| Green | 3.2 mm | 2.3 to 3.2 mm at US championships, 3.5 to 4.5 mm at Opens, 4 to 7 mm UK summer play |
+| Collar | 8 mm | 6 to 9 mm at championships, 10 to 12 mm everyday; about 1.2 m wide |
+| Fairway | 11 mm | 8 to 12 mm at championships, 9 to 13 mm US, 14 to 19 mm UK |
+| First cut | 32 mm | 25 to 35 mm, one mower's pass (about 2 m) to 4 m wide |
+| Rough | 64 mm | about 64 mm for member play, 76 to 89 mm at a US Open, 100 mm UK |
+| Deep rough | 125 mm | 100 to 150 mm |
+| Fescue in seed | 30 cm | 15 to 30 cm standing, unmown or cut once a year |
+| Hay meadow | 60 cm | 50 cm to 1 m before the cut |
+
+From STRI and European Tour guidance, the USGA's fairway article, and
+championship set-up sheets (GCSAA, Oakmont, the Open venues). Each mown band
+is a separate mower at a fixed height, so its edges are steps
+(`edgeBlend` 0); rough into native grass is not kept, and is not sharp.
+
 ## Where its light and wind come from
 
 - **Light lost in the stand.** Roots are as dark as exp(-K L) makes them
@@ -113,8 +133,12 @@ grass.update(renderer, camera, timeSeconds, lookAt);
   It is the ground's shape only: not shade, not which way a slope faces,
   not where the sprinklers reach.
 - **Mowing stripes** are off unless `look.mown` is set: then leaves are
-  laid one way and back in passes (`mowStripes`), and the stripes are
-  their lean.
+  laid one way and back in passes (`mowStripes`). Nothing is painted: a
+  stand of leaves that all face one way sends back light by how much of
+  each face the sun strikes and the eye sees (single scattering in an
+  oriented canopy, after Ross 1981), with a leaf's under face darker than
+  its upper. So the stripes are strong from the air, faint from a stance
+  on the fairway, and change with the sun and as the eye goes round.
 
 No source gave leaf colours species against species, so those are by eye.
 
@@ -209,7 +233,7 @@ No source gave leaf colours species against species, so those are by eye.
   it.
 
 `STARTER_SPECIES` are the game's surfaces turned into rows, and a hay
-meadow. `TURF_SPECIES`, which the lab starts from, are eight named grasses
+meadow. `TURF_SPECIES`, which the lab starts from, are a golf course's eight surfaces
 (creeping bent, perennial rye as fairway and as rough, red fescue, fescue
 in seed, a hay meadow, bermuda, Kentucky bluegrass): their mowing heights
 and leaf widths are the species' own, and their colour and habit were set

@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b33";
+const LAB_BUILD = "b35";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -236,7 +236,7 @@ async function start() {
     if (!num(p.style, ["broad", "flat"]) || !num(p.look, ["clumpSize", "macro", "edgeWobble", "groundShade"])) return "style or look is missing a number";
     species = cloneSpecies(p.species!);
     Object.assign(grass.style, { broad: p.style!.broad, flat: p.style!.flat });
-    Object.assign(grass.look, { clumpSize: p.look!.clumpSize, macro: p.look!.macro, edgeWobble: p.look!.edgeWobble, groundShade: p.look!.groundShade, stripes: Number.isFinite(p.look!.stripes) ? p.look!.stripes : 0.16, mown: p.look!.mown === true });
+    Object.assign(grass.look, { clumpSize: p.look!.clumpSize, macro: p.look!.macro, edgeWobble: p.look!.edgeWobble, groundShade: p.look!.groundShade, stripes: Number.isFinite(p.look!.stripes) ? p.look!.stripes : 1, mown: p.look!.mown === true });
     grass.setSpecies(species);
     rebuildSpecies();
     refreshNumbers();
@@ -314,7 +314,7 @@ async function start() {
   mowPanel.add(grass.look, "mown").name("mown in stripes").onChange(save);
   mowPanel.add(mow, "width", 0.4, 6).name("pass width (m)").decimals(1);
   mowPanel.add(mow, "heading", 0, 180, 1).name("heading (°)");
-  shownAs(mowPanel, grass.look, "stripes", 100, 0, 40, "stripes (%)").onChange(save);
+  shownAs(mowPanel, grass.look, "stripes", 100, 0, 150, "how much it shows (%): 100 is as the light makes it").onChange(save);
 
   // The bar: what is looked at, and from where.
   /** Put the species being edited on the bench, as what the bench shows. */
@@ -597,6 +597,9 @@ async function start() {
     picturePanel.add(s, "textureMode", { "its light and dark": "detail", "its colour": "color" }).name("it gives the leaf").onChange(changed);
     shownAs(picturePanel, s, "textureStrength", 100, 0, 100, "how much shows (%)").onChange(changed);
     picturePanel.add(s, "textureCutout").name("cut to its outline").onChange(changed);
+    // Its edge: mown to a line, or left to run into its neighbour.
+    const edgePanel = folder("Edge");
+    shownAs(edgePanel, s, "edgeBlend", 100, 0, 200, "strays into it (cm): 0 is mown").onChange(changed);
     // Patches: another grass come in, or this one doing worse, over part of its ground.
     const patchPanel = folder("Patches");
     patchPanel.add(s, "patchKind", ["colonies", "blotches"]).name("they are").onChange(changed);
@@ -629,8 +632,8 @@ async function start() {
   refreshBar();
   refreshShow();
 
-  // The gallery: ten scenes, each one press. A scene sets everything the lab has.
-  const LOOK_AS_MADE = { site: 0.5, mown: false, depth: 0.5, clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45 };
+  // The gallery: its scenes, each one press. A scene sets everything the lab has.
+  const LOOK_AS_MADE = { site: 0.5, mown: false, depth: 0.5, clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45 };
   const gallery = el<HTMLDialogElement>("gallery");
   const at = { scene: -1 };
   const refreshCaption = () => {
@@ -654,7 +657,6 @@ async function start() {
     if (sc.mow) {
       mow.width = sc.mow[0];
       mow.heading = sc.mow[1];
-      grass.look.stripes = sc.mow[2];
       grass.look.mown = true;
     }
     Object.assign(view, sc.view);
@@ -768,7 +770,7 @@ async function start() {
   }
   if (sceneAsked >= 0) applyScene(sceneAsked);
   else if (!query.get("preset") && !keptAny && !query.has("at") && !query.has("plot") && !query.has("show")) {
-    applyScene(5);
+    applyScene(1);
     if (!query.has("quiet")) gallery.showModal();
   }
   refreshCaption();

@@ -21,12 +21,10 @@ export function makeHeights(): HeightGrid {
 }
 
 /**
- * The mixed plot, by the starter species' rows: a winding strip of
- * close-mown turf (0) with a mown sward beside it (1), then rough (2) and
- * deep rough (3), fescue (4) beyond on one side and hay meadow (5) on the
- * other; a bare path across it all and a bare hollow, for borders with
- * nothing. `only` fills the whole plot with one species instead. `rows` is
- * how many species there are: a seventh and an eighth get ground of their own.
+ * The mixed plot, by the species' rows: a winding green (0) with its collar (1), fairway (2), first cut
+ * (3), rough (4) and deep rough (5) in bands either side, fescue (6) beyond on one side and meadow (7) on
+ * the other; a bare path across it all and a bare hollow, for borders with nothing. `only` fills the
+ * whole plot with one species instead. `rows` is how many species there are.
  */
 export function makeMap(only: number | null, rows = 6): GrassMap {
   const n = SIDE_M / MAP_CELL_M;
@@ -39,10 +37,10 @@ export function makeMap(only: number | null, rows = 6): GrassMap {
         const z = -SIDE_M / 2 + (j + 0.5) * MAP_CELL_M;
         const off = x - 14 * Math.sin(z / 26);
         const d = Math.abs(off);
-        let id = d < 5 ? 0 : d < 7.5 ? 1 : d < 14 ? 2 : d < 22 ? 3 : off > 0 ? 5 : 4;
-        // (With eight species: the far end of the strip is the seventh's, and a lawn of the eighth lies beside the near end.)
-        if (rows > 6 && id === 1 && z < -18) id = 6;
-        if (rows > 7 && id >= 2 && id <= 3 && off < 0 && z > 30) id = 7;
+        // (Green, collar, fairway, first cut, rough, deep rough; then fescue on one side and meadow on the other.)
+        let id = d < 5 ? 0 : d < 6.2 ? 1 : d < 11 ? 2 : d < 13 ? 3 : d < 19 ? 4 : d < 25 ? 5 : off > 0 ? 7 : 6;
+        // (With fewer species than eight: the last of them takes what is beyond it.)
+        id = Math.min(id, rows - 1);
         if (Math.abs(x * 0.6 + z * 0.8 - 10) < 0.7) id = NO_GRASS;
         if (Math.hypot(x + 9, z - 4) < 2.6) id = NO_GRASS;
         ids[j * n + i] = id;

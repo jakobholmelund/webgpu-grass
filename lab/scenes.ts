@@ -1,9 +1,11 @@
-// The lab's gallery: ten scenes, each the whole of what the lab can be set to
+// The lab's gallery: scenes, each the whole of what the lab can be set to
 // (the species, what grows on the plot, where the eye is, the light, the
 // wind, the mowing, the style), so one press shows what the package does.
 // Plain data: a host can read a scene as it reads a preset.
+//
+// The first eight are a golf course's surfaces, short to tall, one to a scene.
 
-import { type Species, TURF_SPECIES, cloneSpecies } from "../src/index";
+import { MORE_TURF, type Species, TURF_SPECIES, cloneSpecies } from "../src/index";
 
 export interface Scene {
   id: string;
@@ -22,8 +24,8 @@ export interface Scene {
   sun: [number, number];
   /** Wind heading (degrees) and speed (m/s). */
   wind: [number, number];
-  /** Pass width (m), heading (degrees) and how strongly the stripes show (0..0.4). */
-  mow?: [number, number, number];
+  /** Mown in stripes: the pass width (m) and its heading (degrees). */
+  mow?: [number, number];
   style?: { broad: number; flat: number };
   look?: Partial<{ clumpSize: number; macro: number; edgeWobble: number; groundShade: number; shadow: number; occlusion: number }>;
 }
@@ -33,99 +35,139 @@ const turf = (change?: (list: Species[]) => void): Species[] => {
   change?.(list);
   return list;
 };
-const BENT = 0;
-const RYE = 1;
-const RYE_ROUGH = 2;
-const RED_FESCUE = 3;
-const SEED_FESCUE = 4;
-const MEADOW = 5;
-const BERMUDA = 6;
-const BLUEGRASS = 7;
+const GREEN = 0;
+const COLLAR = 1;
+const FAIRWAY = 2;
+const FIRST_CUT = 3;
+const ROUGH = 4;
+const DEEP_ROUGH = 5;
+const FESCUE = 6;
+const MEADOW = 7;
+/** Looking across the plot's bands from the green outward, towards the meadow (+x) or the fescue (-x). */
+const TO_MEADOW = -Math.PI / 2;
+const TO_FESCUE = Math.PI / 2;
 
 export const SCENES: Scene[] = [
   {
     id: "green-at-dawn",
-    title: "A green at first light",
-    blurb: "Creeping bent cut to 3.5 mm, a low sun raking across it, seen from where a ball lies.",
+    title: "The green",
+    blurb: "Creeping bent at a putting green's height of cut, a low sun raking across it, seen from where a ball lies.",
     species: turf(),
-    plot: BENT, row: BENT,
+    plot: GREEN, row: GREEN,
     view: { x: 2, z: 16, eye: 0.3, yaw: 0.3, pitch: -0.12, fov: 44 },
     sun: [80, 9], wind: [70, 1],
   },
   {
-    id: "striped-fairway",
-    title: "A striped fairway",
-    blurb: "Perennial rye at 13 mm, laid one way and back by the mower: the stripes are the leaves' lean, not paint.",
+    id: "the-collar",
+    title: "The collar",
+    blurb: "Green, collar, fairway: three heights of cut, each mown to a line. The steps are a few millimetres and the mower made them.",
     species: turf(),
-    plot: RYE, row: RYE,
-    view: { x: 2, z: 30, eye: 1.7, yaw: 0.15, pitch: -0.2, fov: 50 },
-    sun: [215, 38], wind: [70, 2], mow: [2.8, 8, 0.28],
+    plot: -1, row: COLLAR,
+    view: { x: 3.6, z: 1, eye: 0.16, yaw: TO_MEADOW + 0.25, pitch: -0.1, fov: 46 },
+    sun: [150, 34], wind: [70, 2],
   },
   {
-    id: "bermuda-at-noon",
-    title: "Bermuda at midday",
-    blurb: "A warm-season fairway under a high sun: short, stiff, pointed leaves, and hardly a shadow.",
+    id: "striped-fairway",
+    title: "The fairway, mown in stripes",
+    blurb: "Perennial rye laid one way and back by the mower. Nothing is painted: the stripes are how leaves lying towards you and away from you take the light. Walk round them.",
     species: turf(),
-    plot: BERMUDA, row: BERMUDA,
-    view: { x: -2, z: 12, eye: 0.22, yaw: -0.2, pitch: -0.1, fov: 46 },
-    sun: [180, 74], wind: [120, 2.5],
+    plot: FAIRWAY, row: FAIRWAY,
+    view: { x: 2, z: 30, eye: 6, yaw: 0.15, pitch: -0.3, fov: 50 },
+    sun: [215, 38], wind: [70, 2], mow: [2.8, 8],
+  },
+  {
+    id: "the-first-cut",
+    title: "The first cut",
+    blurb: "A mower's width of semi-rough between the fairway and the rough: fairway, first cut, rough, each a step up.",
+    species: turf(),
+    plot: -1, row: FIRST_CUT,
+    view: { x: 9.2, z: 2, eye: 0.22, yaw: TO_MEADOW + 0.2, pitch: -0.08, fov: 48 },
+    sun: [200, 30], wind: [70, 3],
+  },
+  {
+    id: "the-rough",
+    title: "The rough",
+    blurb: "Rye and bluegrass kept long enough that a ball sits down in it. Clover has come in where nobody sprays.",
+    species: turf(),
+    plot: ROUGH, row: ROUGH,
+    view: { x: 14, z: -6, eye: 0.3, yaw: -0.9, pitch: -0.1, fov: 48 },
+    sun: [140, 40], wind: [90, 3.5],
+  },
+  {
+    id: "deep-rough",
+    title: "Deep rough",
+    blurb: "Red fescue cut once or twice a year: fine, limp and laid over by its own weight.",
+    species: turf(),
+    plot: DEEP_ROUGH, row: DEEP_ROUGH,
+    view: { x: -6, z: 12, eye: 0.45, yaw: 0.8, pitch: -0.08, fov: 48 },
+    sun: [240, 26], wind: [200, 4.5],
   },
   {
     id: "links-in-seed",
-    title: "Links fescue in seed",
-    blurb: "Thin and wispy, gone to straw and seed, with an evening wind going through it.",
+    title: "Fescue in seed",
+    blurb: "Never mown: thin and wispy, gone to straw and seed, with an evening wind going through it.",
     species: turf(),
-    plot: SEED_FESCUE, row: SEED_FESCUE,
-    view: { x: 12, z: 8, eye: 0.6, yaw: 1.1, pitch: -0.05, fov: 46 },
+    plot: FESCUE, row: FESCUE,
+    view: { x: 12, z: 8, eye: 0.7, yaw: 1.1, pitch: -0.05, fov: 46 },
     sun: [285, 12], wind: [250, 7],
   },
   {
     id: "hay-meadow",
-    title: "A hay meadow in a breeze",
+    title: "A hay meadow",
     blurb: "Knee-deep and uncut. Walk into it (W) and look back at the sun through the leaves.",
     species: turf(),
     plot: MEADOW, row: MEADOW,
-    view: { x: -20, z: 6, eye: 0.9, yaw: 2.2, pitch: -0.04, fov: 52 },
+    view: { x: -20, z: 6, eye: 1.0, yaw: 2.2, pitch: -0.04, fov: 52 },
     sun: [130, 20], wind: [200, 5],
   },
   {
-    id: "the-edge-of-the-rough",
-    title: "Where the fairway meets the rough",
-    blurb: "Eight grasses on one plot, short to tall, each growing right up to its neighbour, shadow and all.",
+    id: "mown-and-natural",
+    title: "A mown edge and a natural one",
+    blurb: "Rough is mown to a line. Beyond it the deep rough and the fescue are nobody's, and run into each other in tongues and single plants.",
     species: turf(),
-    plot: -1, row: RYE_ROUGH,
-    view: { x: 3.5, z: 2, eye: 0.6, yaw: -1.25, pitch: -0.1, fov: 52 },
-    sun: [200, 30], wind: [70, 3],
+    plot: -1, row: DEEP_ROUGH,
+    view: { x: -15.5, z: 2, eye: 1.1, yaw: TO_FESCUE - 0.2, pitch: -0.16, fov: 52 },
+    sun: [160, 34], wind: [250, 4],
   },
   {
     id: "from-above",
     title: "The whole plot from above",
-    blurb: "Fourteen metres up: no leaves are drawn from here, and the ground carries every species' colour and its patches.",
+    blurb: "Fourteen metres up: no leaves are drawn from here, and the ground carries every surface's colour and its patches.",
     species: turf(),
-    plot: -1, row: BENT,
+    plot: -1, row: GREEN,
     view: { x: 2, z: 14, eye: 14, yaw: 0.25, pitch: -1.0, fov: 55 },
     sun: [240, 40], wind: [70, 3],
   },
   {
+    id: "bermuda-at-noon",
+    title: "A bermuda fairway at midday",
+    blurb: "A warm-season fairway under a high sun: short, stiff, pointed leaves, and hardly a shadow.",
+    species: turf((list) => {
+      list[FAIRWAY] = cloneSpecies([MORE_TURF.bermuda])[0];
+    }),
+    plot: FAIRWAY, row: FAIRWAY,
+    view: { x: -2, z: 12, eye: 0.22, yaw: -0.2, pitch: -0.1, fov: 46 },
+    sun: [180, 74], wind: [120, 2.5],
+  },
+  {
     id: "a-dry-summer",
     title: "A dry summer",
-    blurb: "A lawn after six weeks without rain: straw, with the patches that still hold water left green.",
+    blurb: "A lawn after six weeks without rain: straw, with the green left where the ground holds water.",
     species: turf((list) => {
-      Object.assign(list[BLUEGRASS], { name: "Parched lawn", dry: 0.22, color: "#a8974c", tipTint: [1.12, 1.04, 0.8], density: 0.8, height: 0.05, sheen: 0.1, rootShade: 0.55, variation: 0.3, patchKind: "blotches", patchSite: -1, patch: 0.4, patchSize: 1.4, patchTint: [0.58, 1.0, 0.66], patchTall: 1.15 });
+      list[ROUGH] = { ...cloneSpecies([MORE_TURF.bluegrass])[0], name: "Parched lawn", dry: 0.22, color: "#a8974c", tipTint: [1.12, 1.04, 0.8], density: 0.8, height: 0.05, sheen: 0.1, rootShade: 0.55, variation: 0.3, patchKind: "blotches", patchSite: -1, patch: 0.4, patchSize: 1.4, patchTint: [0.58, 1.0, 0.66], patchTall: 1.15 };
     }),
-    plot: BLUEGRASS, row: BLUEGRASS,
+    plot: ROUGH, row: ROUGH,
     view: { x: -4, z: -12, eye: 0.35, yaw: 2.6, pitch: -0.14, fov: 48 },
     sun: [200, 58], wind: [30, 2],
   },
   {
     id: "storybook",
     title: "Storybook",
-    blurb: "The same field with the style turned up: fewer, broader leaves and flat shading. Photographic to drawn is two sliders.",
+    blurb: "The same rough with the style turned up: fewer, broader leaves and flat shading. Photographic to drawn is two sliders.",
     species: turf((list) => {
-      Object.assign(list[RED_FESCUE], { color: "#4f9a4a" });
-      Object.assign(list[RYE_ROUGH], { color: "#57a845" });
+      Object.assign(list[ROUGH], { color: "#57a845", patch: 0 });
     }),
-    plot: RYE_ROUGH, row: RYE_ROUGH,
+    plot: ROUGH, row: ROUGH,
     view: { x: 14, z: -6, eye: 0.7, yaw: -0.9, pitch: -0.12, fov: 50 },
     sun: [140, 46], wind: [90, 4],
     style: { broad: 0.85, flat: 0.9 }, look: { macro: 0.55, clumpSize: 1.4 },
@@ -135,7 +177,7 @@ export const SCENES: Scene[] = [
     title: "One plant on the bench",
     blurb: "Every field is this, a few hundred thousand times. Drag to turn it; change its species on the right.",
     species: turf(),
-    plot: -1, row: RYE_ROUGH, show: "One clump",
+    plot: -1, row: ROUGH, show: "One clump",
     view: { x: 10.6, z: 21, eye: 0.5, yaw: 0.36, pitch: -0.13, fov: 50 },
     sun: [300, 32], wind: [70, 2],
   },

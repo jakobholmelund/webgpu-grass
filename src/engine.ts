@@ -91,7 +91,7 @@ export const DEFAULT_LAYERS: GrassLayers = {
 /** A plant grows once its root is this far (m) inside its species' ground, so a border is a crowded line and not a spill. */
 const EDGE_KEEP = 0.02;
 /** Within this far (m) of a border a stand's height follows the canopy down towards its shorter neighbour's. */
-const EDGE_RAMP_M = 0.35;
+const EDGE_RAMP_M = 0.06;
 /** A tuft's blade stands at most this far (m) from the tuft's root, and never over the border. */
 const REACH_MAX = 0.24;
 /** A fine leaf left standing where others were thinned out is drawn up to this much broader. */
@@ -100,6 +100,10 @@ const BROADEN_MAX = 1.5;
 const PLANT_LEAVES = 3;
 /** How far a leaf fully laid by the mower leans, as its tip's reach over its height: some 25 degrees. */
 const LAY_LEAN = 0.45;
+/** How far up the face of a leaf looks that is hardly laid over at all (radians from level). */
+const LAY_FACE_UP = 0.35;
+/** How bright a leaf's under face is beside its upper one: it has the ground on it, not the sky. */
+const LAY_UNDER = 0.72;
 /**
  * A stand seen from too far to see its leaves: how light it is between its roots' shade (0) and its lit
  * tips (1), and how far up it (0 root, 1 tip) the sun it takes is reckoned. The ground that stands in for
@@ -298,7 +302,7 @@ export function createGrass(options: GrassOptions): Grass {
   const uStyle = uniform(new THREE.Vector2(0, 0));
   /** clumpSize, macro, edgeWobble, groundShade. */
   const uLook = uniform(new THREE.Vector4(0.85, 0.3, 0.03, 1));
-  const uStripes = uniform(0.16);
+  const uStripes = uniform(1);
   /** 1 while the field is mown in stripes (`look.mown`), 0 while it is not: then no leaf is laid over. */
   const uMown = uniform(0);
   /** The eye's height over the ground it looks at (m), as near as the host has said. */
@@ -367,7 +371,18 @@ export function createGrass(options: GrassOptions): Grass {
   const lookup = (xz: Vec2) => {
     // (Over a metre or so: a finer wobble is a saw's edge, not a line that strays.)
     const w = noise(xz.div(16).add(0.17));
-    return map.sample(xz.add(vec2(w.g, w.a).sub(0.5).mul(uLook.z.mul(2))));
+    const strayed = xz.add(vec2(w.g, w.a).sub(0.5).mul(uLook.z.mul(2)));
+    // An edge nobody keeps (`edgeBlend`): the place is asked for a little way off, by three noises, one a
+    // few strides wide (the neighbour's tongues), one a stride (its drifts), one a hand (its single
+    // plants), each as far as the species here lets its edge stray. So the neighbour comes in among it, and
+    // a mown species, which lets nothing stray, keeps its line on its own side.
+    const blend = row(int(min(map.sample(strayed).species, float(MAX_SPECIES - 1))), 11).y;
+    const tongues = noise(xz.div(9.7).add(0.61));
+    const drifts = noise(xz.div(2.3).add(0.29));
+    const plants = noise(xz.div(0.37).add(0.83));
+    // (The noise keeps near its middle: each is stretched to reach about as far, in metres, as it says.)
+    const off = vec2(tongues.r, tongues.a).sub(0.5).mul(4.2).add(vec2(drifts.g, drifts.r).sub(0.5).mul(2.4)).add(vec2(plants.b, plants.g).sub(0.5).mul(1.8));
+    return map.sample(strayed.add(off.mul(blend)));
   };
 
   /** A stand's colour at a place: its species' colour, drifting a little over tens of metres and over a few. */
@@ -389,17 +404,39 @@ export function createGrass(options: GrassOptions): Grass {
   /** The way a species' leaves were laid over at a place (x, z), by how far the mower lays that species. */
   const layAt = (xz: Vec2, k: Int): Vec2 => (mow ? mow.sample(xz).mul(row(k, 6).w).mul(uMown) : vec2(0, 0));
   /**
-   * Laid grass is lighter seen along its lay (the leaves' upper faces) and
-   * darker against it (their cut ends, and the shade between them): the
-   * stripes of a mown sward, which change places as the eye goes round
-   * them. From the place and the eye alone, so the ground and the leaves on
-   * it take exactly the same.
+   * What laying grass over does to how bright it is: nothing is painted. A mown stripe is leaves that all
+   * lean one way, so they all turn their faces one way, and a stand of leaves that face one way sends back
+   * more light the more of each face the eye sees and the sun strikes. For a deep stand of such leaves the
+   * light sent back towards the eye goes as
+   *
+   *     |n.s| |n.e| / ( |n.s| e.up + |n.e| s.up )
+   *
+   * (single scattering in a canopy of oriented leaves: Ross 1981), n the leaves' face, s the sun, e the eye.
+   * The stripe beside it leans the other way, and the two are told apart by nothing else: so the stripes
+   * are there where the eye looks along the passes and gone where it looks across them, they change places
+   * as the eye goes round, and they come and go with the sun. As a share of the mean of the two ways, so
+   * that grass not laid over is as it was. From the place, the eye and the sun alone, so the ground and the
+   * leaves on it take exactly the same.
    */
   const laidShade = (xz: Vec2, lay: Vec2): THREE.Node<"float"> => {
-    const to = xz.sub(vec2(uCamPos.x, uCamPos.z));
-    const off = length(to);
-    // (Looking straight down there is neither along nor against.)
-    return float(1).add(dot(lay, to.div(max(off, float(1e-3)))).mul(uStripes).mul(smoothstep(float(0.15), float(1.2), off)));
+    const toEye = normalize(vec3(uCamPos.x.sub(xz.x), max(uEyeUp, float(0.02)), uCamPos.z.sub(xz.y)));
+    const laid = min(length(lay), float(1));
+    const way = lay.div(max(length(lay), float(1e-4)));
+    // (A leaf laid over shows its upper face: the further over, the more that face looks up, and the less back the way it came.)
+    const tilt = laid.mul(0.5).add(LAY_FACE_UP);
+    const sent = (sign: number) => {
+      const face = vec3(way.x.mul(cos(tilt)).mul(-sign), sin(tilt), way.y.mul(cos(tilt)).mul(-sign));
+      // (Lit by the sky as well as the sun, and from either side: a leaf passes about as much light as it
+      // sends back. But the side it shows matters: its upper face has the sky on it, its under face the ground.)
+      const lit = abs(dot(face, uSun)).mul(0.65).add(0.35);
+      const facing = dot(face, toEye);
+      const seen = max(abs(facing), float(0.08));
+      const side = mix(float(LAY_UNDER), float(1), smoothstep(float(-0.15), float(0.15), facing));
+      return lit.mul(seen).div(lit.mul(toEye.y).add(seen.mul(max(uSun.y, float(0.05))))).mul(side);
+    };
+    const here = sent(1);
+    const mean = here.add(sent(-1)).mul(0.5);
+    return float(1).add(clamp(here.div(mean).sub(1), float(-0.3), float(0.3)).mul(laid).mul(uStripes));
   };
 
   // The canopy: how tall the grass stands at each place, kept as a picture over the map's ground and
@@ -1127,7 +1164,7 @@ export function createGrass(options: GrassOptions): Grass {
         // Beside shorter grass, or bare ground, a stand comes down to meet it over a stride (by the canopy's
         // picture, which is the mean of the two at their line): never up, so mown turf beside rough stays
         // mown to its edge, and what is left at the line is a step half the height it was.
-        tallNode.mulAssign(mix(clamp(canopyAt(xz).div(max(tall0, float(1e-4))), float(0.3), float(1)), float(1), smoothstep(float(0), float(EDGE_RAMP_M), here.edge)));
+        tallNode.mulAssign(mix(clamp(canopyAt(xz).div(max(tall0, float(1e-4))), float(0.3), float(1)), float(1), smoothstep(float(0), row(k, 11).y.mul(0.9).add(EDGE_RAMP_M), here.edge)));
         if (fine) {
           // (A pile is a pile only while it is thick. Where the square thins out, lone leaves a centimetre tall on close-mown turf are dark specks on it, so there they sink away and leave the turf to the ground.)
           const closeMown = float(1).sub(smoothstep(float(0.015), float(0.03), tall0));
@@ -1472,7 +1509,7 @@ export function createGrass(options: GrassOptions): Grass {
   repack();
   const style = { broad: 0, flat: 0 };
   let frame = 0;
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, bare };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const bufferSize = new THREE.Vector2();

@@ -71,6 +71,14 @@ export interface Species {
    */
   lay: number;
 
+  // Its edge, where other grass begins.
+  /**
+   * How far its edge strays into it (m). 0 is a mown edge: a mower cuts to a line, and the grass is one
+   * height on this side and another on that. More is an edge nobody keeps: the neighbour comes in among
+   * it in tongues and single plants over about this far, and the two heights run into each other.
+   */
+  edgeBlend: number;
+
   // Patches: no stand is one thing. Part of its ground is another grass that came in (annual meadow-grass
   // in a bent green, brighter and a little taller), or the same grass doing worse (drought, which browns
   // a lawn in patches and not evenly), or something low and dark among it. One kind of patch to a species.
@@ -181,7 +189,7 @@ export function packSpecies(
     table[row + 7].set(layer, layer < 0 ? 0 : s.textureStrength, s.textureMode === "color" ? 1 : 0, layer >= 0 && s.textureCutout ? 1 : 0);
     const under = ground[k] ?? null;
     table[row + 8].set(under ? s.groundDetail : 0, Math.max(0.05, s.groundTile), Math.max(0.02, s.patchSize), s.patchTall);
-    table[row + 11].set(Math.min(1, Math.max(-1, s.patchSite)), 0, 0, 0);
+    table[row + 11].set(Math.min(1, Math.max(-1, s.patchSite)), Math.max(0, s.edgeBlend), 0, 0);
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
     table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, s.patchKind === "blotches" ? 1 : 0);
   }
@@ -190,7 +198,7 @@ export function packSpecies(
 /** A plain leaf: what a species written before leaves had pictures is given. */
 const NO_TEXTURE = { leafTexture: "", textureMode: "detail" as TextureMode, textureStrength: 1, textureCutout: false };
 /** What a species written before these were settings is given: a plain leaf, standing as it grew. */
-const NO_PATCHES = { patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
+const NO_PATCHES = { edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
 const ADDED_LATER = { ...NO_TEXTURE, ...NO_PATCHES, lay: 0, groundDetail: 1, groundTile: 0.6 };
 
 /**
@@ -311,52 +319,68 @@ export function checkSpecies(value: unknown): string | null {
 const turf = (name: string, from: number, set: Partial<Species>): Species => ({ ...STARTER_SPECIES[from], ...set, name });
 
 /**
- * Eight named grasses, as they are kept: the four a golf course is mostly
- * made of (creeping bent, perennial rye, fine fescue, bermuda), a lawn's
- * bluegrass, and two left to grow. The heights are mowing heights in use;
- * the leaf widths are the species' own, from turf references (bent and
- * fine fescue under a millimetre, bermuda 1.5 to 2, rye and bluegrass 2 to
- * 4). The colours and the habit were set by eye beside photographs in the
- * lab: a likeness, not a measurement.
+ * A golf course's surfaces, short to tall, as eight named stands: the green, its collar, the fairway, the
+ * first cut, the rough, deep rough, and two that nobody mows. The heights are heights of cut in use (see
+ * the README for where each comes from); the leaf widths are the species' own, from turf references
+ * (bent and fine fescue under a millimetre, rye 2 to 4). The colours and the habit were set by eye: a
+ * likeness, not a measurement.
  *
- * In the order of the lab's plot: short to tall for the first six.
+ * The mown ones have mown edges (`edgeBlend` 0); deep rough, fescue and meadow run into their neighbours.
+ * In the order of the lab's plot.
  */
 export const TURF_SPECIES: Species[] = [
-  turf("Creeping bent, green", 0, {
-    height: 0.0035, heightSpread: 0.08, density: 2, width: 0.0009, widthSpread: 0.0003, tip: "cut",
+  turf("Green (creeping bent)", 0, {
+    height: 0.0032, heightSpread: 0.08, density: 2, width: 0.0009, widthSpread: 0.0003, tip: "cut",
     splay: 0.25, droop: 0.2, stiffness: 1, disorder: 0.25, color: "#538440", tipTint: [1.03, 1.04, 0.98], rootShade: 0.8, variation: 0.13,
     dry: 0.005, sheen: 0, lay: 1, groundTile: 0.35,
-    // (Annual meadow-grass in it, as nearly every bent green has within a few years: brighter, not bluish.)
-    // (It gets in where the green stays wet.)
+    // (Annual meadow-grass in it, as nearly every bent green has within a few years. It gets in where the green stays wet.)
     patchSite: -0.7, patch: 0.16, patchSize: 0.5, patchTint: [1.08, 1.1, 0.9], patchTall: 1.06,
   }),
-  turf("Perennial rye, fairway", 1, {
-    height: 0.013, heightSpread: 0.12, density: 1.5, width: 0.0026, widthSpread: 0.001, tip: "cut",
+  turf("Collar (creeping bent)", 0, {
+    height: 0.008, heightSpread: 0.1, density: 2, width: 0.0011, widthSpread: 0.0004, tip: "cut",
+    splay: 0.4, droop: 0.3, stiffness: 1, disorder: 0.3, color: "#4f8640", tipTint: [1.04, 1.05, 0.97], rootShade: 0.76, variation: 0.15,
+    dry: 0.005, sheen: 0, lay: 1, groundTile: 0.4,
+    patchSite: -0.7, patch: 0.12, patchSize: 0.5, patchTint: [1.08, 1.1, 0.9], patchTall: 1.06,
+  }),
+  turf("Fairway (perennial rye)", 1, {
+    height: 0.011, heightSpread: 0.12, density: 1.5, width: 0.0026, widthSpread: 0.001, tip: "cut",
     splay: 0.7, droop: 0.6, twist: 0.6, stiffness: 1, disorder: 0.35, color: "#3f8a35", tipTint: [1.1, 1.09, 0.98], rootShade: 0.68,
     variation: 0.2, dry: 0.01, sheen: 1, lay: 0.85, groundTile: 0.5,
   }),
-  turf("Perennial rye, rough", 2, {
-    height: 0.055, heightSpread: 0.3, density: 1, width: 0.0032, widthSpread: 0.0012, tip: "point",
+  turf("First cut (perennial rye)", 1, {
+    height: 0.032, heightSpread: 0.16, density: 1.2, width: 0.003, widthSpread: 0.001, tip: "cut",
+    splay: 0.9, droop: 0.9, twist: 0.8, stiffness: 0.95, disorder: 0.5, color: "#42903a", tipTint: [1.1, 1.09, 0.95], rootShade: 0.6,
+    variation: 0.2, dry: 0.015, sheen: 1, lay: 0.5, groundTile: 0.6,
+  }),
+  turf("Rough (rye and bluegrass)", 2, {
+    height: 0.064, heightSpread: 0.3, density: 1, width: 0.0032, widthSpread: 0.0012, tip: "point",
     splay: 1, droop: 1.2, stiffness: 0.7, clump: 0.7, disorder: 0.9, color: "#4a9440", tipTint: [1.1, 1.1, 0.92], rootShade: 0.5,
     variation: 0.22, dry: 0.02, sheen: 1,
+    // (Something low and dark among it: clover, where nobody sprays.)
+    patch: 0.08, patchSize: 0.66, patchTint: [0.72, 0.95, 0.72], patchTall: 0.7,
   }),
-  turf("Red fescue, deep rough", 3, {
-    height: 0.11, heightSpread: 0.5, density: 1.4, width: 0.0009, widthSpread: 0.0004, tip: "point",
+  turf("Deep rough (red fescue)", 3, {
+    height: 0.125, heightSpread: 0.5, density: 1.4, width: 0.0009, widthSpread: 0.0004, tip: "point",
     splay: 1.1, droop: 1.5, stiffness: 0.25, clump: 1, disorder: 1, color: "#4f9638", tipTint: [1.12, 1.12, 0.88], rootShade: 0.5,
-    variation: 0.24, dry: 0.05, sheen: 0.5,
+    variation: 0.24, dry: 0.05, sheen: 0.5, edgeBlend: 0.4,
   }),
-  turf("Fescue in seed", 4, { color: "#8c9862", tipTint: [1.08, 1.08, 0.94], seedTint: [1.42, 1.38, 1.02], dry: 0.2, density: 0.38 }),
-  turf("Hay meadow", 5, {}),
-  turf("Bermuda, fairway", 1, {
+  turf("Fescue in seed", 4, {
+    height: 0.3, heightSpread: 0.8, color: "#8c9862", tipTint: [1.08, 1.08, 0.94], seedTint: [1.42, 1.38, 1.02], dry: 0.2, density: 0.38, edgeBlend: 1,
+  }),
+  turf("Hay meadow", 5, { height: 0.6, edgeBlend: 1.2 }),
+];
+
+/** Two more, for a host or a scene to put in a row of its own: a warm-season fairway and a lawn. */
+export const MORE_TURF: { bermuda: Species; bluegrass: Species } = {
+  bermuda: turf("Fairway (bermuda)", 1, {
     height: 0.011, heightSpread: 0.1, density: 1.8, width: 0.0017, widthSpread: 0.0005, tip: "point",
     splay: 0.9, droop: 0.3, twist: 0.3, stiffness: 1, disorder: 0.45, color: "#68a53f", tipTint: [1.1, 1.1, 0.9], rootShade: 0.62,
     variation: 0.26, dry: 0.03, sheen: 0.5, lay: 0.7, groundTile: 0.5,
   }),
-  turf("Kentucky bluegrass, lawn", 2, {
+  bluegrass: turf("Lawn (Kentucky bluegrass)", 2, {
     height: 0.06, heightSpread: 0.2, density: 1.3, tufted: false, width: 0.003, widthSpread: 0.001, tip: "cut",
     splay: 0.8, droop: 0.9, stiffness: 0.85, clump: 0.3, disorder: 0.6, color: "#39793d", tipTint: [1.08, 1.08, 0.96], rootShade: 0.55,
     variation: 0.18, dry: 0.01, sheen: 0.5, lay: 0.4,
-    // (Something low and dark among it: clover, in a lawn nobody sprays.)
     patch: 0.12, patchSize: 0.66, patchTint: [0.68, 0.94, 0.7], patchTall: 0.7,
   }),
-];
+};
