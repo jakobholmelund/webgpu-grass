@@ -198,6 +198,16 @@ The shaders call them in the compute pass and in fragment shaders both, so
 a texture in one is looked up at a set level. The lab's "clouds' shadows"
 is one: twenty lines in `lab/main.ts`.
 
+A host that draws its own ground under the grass, in its own colours,
+multiplies that colour by `grass.groundShade(xz)`: what the stand does to
+the ground under it (dark between the leaves near the eye, the stand's
+mean where the leaves are too far off to draw, its picture from above,
+its patches, the grass's own shade). It takes the host's colour to be the
+stand's as a whole, so give each species that colour over
+`standTone(species)` for its leaves. It adds four textures to the
+ground's shader, and a shader stage has sixteen on any machine. The lab's
+`?hostground` draws its ground this way.
+
 The leaves are thickest about the eye and thin out from it. A picture of
 something on the ground some way off (a ball at a golfer's feet, seen from
 four metres behind) wants them about the thing instead:

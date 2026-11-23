@@ -30,6 +30,19 @@ type Vec4 = THREE.Node<"vec4">;
 
 /** The top of a stand, as a share of its species' height: its plants stand from 0.78 to 1.08 of that. */
 const STAND_TOP = 0.93;
+/**
+ * How dark a stand is as a whole beside its leaves' own colour, 0..1: its roots are in its own shade, and
+ * what is seen of it from any way off is root to tip together. For a host that says what colour a stand
+ * of grass is to be, rather than its leaves: give the species that colour over this. (`sunUp`: the sun's
+ * height, as the sine of its angle; `depth`: `look.depth`. The same sum the shaders do.)
+ */
+export function standTone(species: Pick<Species, "height" | "density" | "rootShade">, sunUp = 0.7, depth = 0.5): number {
+  const leafArea = Math.min(6, species.height * 60 + 0.75) * Math.min(1.5, Math.max(0.3, species.density)) * (1.55 - species.rootShade);
+  const reaches = Math.exp((-leafArea * 0.5) / Math.max(sunUp, 0.15)) * 0.62 + Math.exp(-leafArea * 0.5) * 0.38;
+  const rootDark = species.rootShade + (Math.min(1, Math.max(0.06, reaches)) - species.rootShade) * depth;
+  return rootDark + (1 - rootDark) * STAND_MEAN;
+}
+
 /** How many things can lie in the grass at once (see `Grass.setThings`). */
 export const MAX_THINGS = 4;
 
@@ -377,7 +390,8 @@ export interface Grass {
   groundColor(xz: Vec2): Vec3;
   /**
    * For a host whose ground has its own colour: what the grass standing at a place does to it, as
-   * what to multiply that colour by. Dark where the eye sees down between the leaves and the stand's
+   * what to multiply that colour by. The host's colour is taken to be the stand's as a whole (so the
+   * species' leaf colour is that colour over `standTone`): far off this is 1. Dark where the eye sees down between the leaves and the stand's
    * own mean where it stands in for leaves too far off to draw, the stand's picture and its relief,
    * its patches, the mower's stripes, the gusts, the grass's own shade. None of the world's light
    * (`GrassOptions.world`), which is the host's to put on its ground itself. In a fragment shader.
@@ -987,12 +1001,16 @@ export function createGrass(options: GrassOptions): Grass {
     const fromEye = normalize(vec3(xz.x.sub(uCamPos.x), max(uEyeUp, float(0.02)).negate(), xz.y.sub(uCamPos.z)));
     const glow = vec3(1).add(vec3(1.25, 1.4, 0.05).mul(pow(max(dot(fromEye, uSun), float(0)), float(4)).mul(0.26).mul(far).mul(smoothstep(float(0.02), float(0.1), row(k, 0).x))));
     // (Bare ground is shaded as grown ground is: a path beside tall grass lies in its shadow.)
-    const onGround = leafShadow(positionWorld, row(k, 0).x, row(k, 1).x);
+    // (Not for a host's own ground: its shader has its own textures to look up, a stage may have sixteen in all on any
+    // machine, and the leaves' shadow picture is the one of ours the ground can best do without.)
+    const onGround = forHost ? vec4(1, 0, 1, 1) : leafShadow(positionWorld, row(k, 0).x, row(k, 1).x);
     const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), mix(onGround.w, onGround.x, onGround.z)), onGround.y);
     // What the stand does to the ground's colour, apart from what colour that is.
     const stand = vec3(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow);
     // (For a host with its own ground: that alone, with the grass's own shade and none of the world's, which is the host's to put on its ground itself.)
-    if (forHost) return mix(vec3(1), stand, alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor, false))).mul(skyOpen(xz, standsFor, false));
+    // (As a share of the stand's own mean: the host's colour is the stand's as a whole, so far off, where the
+    // ground stands in for the stand, this is 1 and the host's colour is what is seen. See `standTone`.)
+    if (forHost) return mix(vec3(1), stand.div(mix(rootDark(k), float(1), STAND_MEAN).mul(uLook.w).max(0.05)), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor, false))).mul(skyOpen(xz, standsFor, false));
     return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(stand), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
   };
   const groundColor = (xz: Vec2): Vec3 => ground(xz, false);
