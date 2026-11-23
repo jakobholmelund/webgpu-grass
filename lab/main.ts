@@ -11,7 +11,7 @@
 //   ?show=blade  start on a specimen: blade, plant, tuft or clump
 
 import * as THREE from "three/webgpu";
-import { dot, float, length, max, mix, normalWorld, normalize, positionGeometry, positionWorld, pow, smoothstep, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { dot, float, length, max, mix, normalWorld, normalize, positionGeometry, positionWorld, pow, sin, smoothstep, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import GUI from "three/addons/libs/lil-gui.module.min.js";
 import { MAX_LEAF_TEXTURES, TURF_SPECIES, type Species, type SpecimenKind, checkSpecies, cloneSpecies, createGrass, heightAt, heightGrid, mowStripes, speciesMap, thingMiddleFor } from "../src/index";
 import { LEAF_ART } from "./leafart";
@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b55";
+const LAB_BUILD = "b56";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -95,7 +95,15 @@ async function start() {
   const map = speciesMap(plotGrid);
   // (Mown up and down the strip of turf, a little off its line, by a mower two and a half metres wide.)
   const mow = mowStripes({ width: 2.5, heading: 12 });
-  const grass = createGrass({ height: heightGrid(heights), map, mow, species });
+  // The host's own light over the grass (`GrassOptions.world`): here, clouds' shadows drifting across.
+  const clouds = { on: false };
+  const uClouds = uniform(new THREE.Vector2(0, 0));
+  const cloudShade = (xz: THREE.Node<"vec2">) => {
+    const t = uClouds.y;
+    const sum = sin(xz.x.mul(0.11).add(t.mul(0.3))).add(sin(xz.y.mul(0.09).sub(t.mul(0.21)))).add(sin(xz.x.add(xz.y).mul(0.05).add(t.mul(0.1))));
+    return mix(float(1), float(1).sub(smoothstep(float(0.5), float(1.3), sum).mul(0.85)), uClouds.x);
+  };
+  const grass = createGrass({ height: heightGrid(heights), map, mow, species, world: { sun: cloudShade } });
   scene.add(grass.object);
 
   // The ground: the plot's heights as a mesh, coloured and lit as the grass on it is.
@@ -325,6 +333,7 @@ async function start() {
   shownAs(lightPanel, grass.look, "occlusion", 100, 0, 100, "sky hidden by it (%)");
   shownAs(lightPanel, grass.look, "depth", 100, 0, 100, "light lost in the stand (%)");
   lightPanel.add(grass.look, "leafShadows").name("leaves shadow each other");
+  lightPanel.add(clouds, "on").name("clouds' shadows (the host's own light)");
   // What a close look is made of: each can be turned down to nothing to see what it adds.
   const detailPanel = sceneGui.addFolder("Detail");
   shownAs(detailPanel, grass.look, "fold", 100, 0, 250, "fold of near leaves (%)");
@@ -882,6 +891,7 @@ async function start() {
     (scene.fog as THREE.Fog).color.copy(skyHorizon.value);
     const windAz = (light.windHeading * Math.PI) / 180;
     grass.environment.wind.set(Math.sin(windAz), Math.cos(windAz), light.windSpeed);
+    uClouds.value.set(clouds.on ? 1 : 0, now);
     grass.show.tufts = show.tufts;
     grass.show.leaves = show.fineLeaves;
 
@@ -1002,6 +1012,7 @@ async function start() {
     preset,
     load,
     scenes: SCENES,
+    clouds,
     setBall,
     ballSet,
     placeBall,

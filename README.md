@@ -173,6 +173,38 @@ grass that tall, taking the top of a stand as its plants' mean height. No
 two plants are the same height, so at any one place it is that give or
 take a few millimetres. The lab's "A ball in the grass" panel sets it.
 
+## In a host
+
+As a dependency, from this repository at a commit you have looked at:
+
+```bash
+pnpm add github:jakobholmelund/webgpu-grass#<commit>
+```
+
+It is TypeScript source (`src/index.ts`), for a bundler that takes
+TypeScript, and `three` is a peer: the host's own copy, r187.
+
+What stands over the grass and is not grass is the host's to tell it, as
+`createGrass({ ..., world })`: three functions of a place, any of them left
+out.
+
+- `world.sun(xz)`: how much of the sun reaches the place, 0 to 1. A
+  cloud's shadow, a tree's. The sky still lights it.
+- `world.sky(xz)`: how much of the sky it sees, 0 to 1. Under a crown, in
+  a hollow.
+- `world.tint(xz)`: what the grass's colour is multiplied by. Wet grass.
+
+The shaders call them in the compute pass and in fragment shaders both, so
+a texture in one is looked up at a set level. The lab's "clouds' shadows"
+is one: twenty lines in `lab/main.ts`.
+
+A course that already keeps a field for each of its surfaces has its map
+already. `fieldMap({ fields, species, x0, z0, width, depth, edgePerLead })`
+takes those textures, a channel to a surface, and says which species each
+channel is: a place belongs to the surface whose field is highest there.
+`speciesMap`, for a plain grid of species numbers, is the same thing with
+the fields made for you.
+
 ## What it does not do yet
 
 - **Light.** Leaves are unlit materials, coloured in the compute pass by a

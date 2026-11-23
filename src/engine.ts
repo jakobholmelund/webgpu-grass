@@ -253,6 +253,22 @@ export interface GrassOptions {
   map: MapSource;
   species: readonly Species[];
   layers?: GrassLayers;
+  /**
+   * The light at a place, from what the host has standing over the grass and the grass knows nothing
+   * of: clouds, trees, buildings, rain. Each is a function of a place (x, z) the shaders call, in the
+   * compute pass and in fragment shaders both, so a texture in one is looked up at a set level.
+   */
+  world?: WorldLight;
+}
+
+/** See `GrassOptions.world`. Any of them may be left out. */
+export interface WorldLight {
+  /** How much of the sun reaches the place, 0..1: a cloud's shadow, a tree's. The sky still lights it. */
+  sun?(xz: Vec2): THREE.Node<"float">;
+  /** How much of the sky the place sees, 0..1: under a tree's crown, in a hollow, against a wall. */
+  sky?(xz: Vec2): THREE.Node<"float">;
+  /** What the grass's colour is multiplied by there: wet grass is darker, grass under leaves is lit green. */
+  tint?(xz: Vec2): Vec3;
 }
 
 export interface Grass {
@@ -602,7 +618,8 @@ export function createGrass(options: GrassOptions): Grass {
     const gb = noise(xz.div(36.0).add(0.37));
     const broad = ga.r.mul(0.6).add(ga.g.mul(0.4));
     const mid = gb.r.mul(0.65).add(gb.a.mul(0.35));
-    return base.mul(float(1).add(broad.sub(0.5).mul(uLook.y))).mul(float(1).add(mid.sub(0.5).mul(0.14)));
+    const drifted = base.mul(float(1).add(broad.sub(0.5).mul(uLook.y))).mul(float(1).add(mid.sub(0.5).mul(0.14)));
+    return options.world?.tint ? drifted.mul(options.world.tint(xz)) : drifted;
   };
 
   /** Lit as the ground is lit, slope and all: a bank facing the sun is lighter, and its grass with it. */
@@ -716,13 +733,13 @@ export function createGrass(options: GrassOptions): Grass {
       const over = canopyAt(xz.add(to.mul(far))).sub(up.add(rise.mul(far)));
       lit = min(lit, float(1).sub(smoothstep(float(0), float(0.015 + far * 0.1), over)));
     }
-    return mix(float(1), lit, uShade.x);
+    return mix(float(1), lit, uShade.x).mul(options.world?.sun ? clamp(options.world.sun(xz), float(0), float(1)) : float(1));
   };
   /** How much of the sky a point sees, 0..1: less beside taller grass, whichever way the sun is. */
   const skyOpen = (xz: Vec2, up: THREE.Node<"float">): THREE.Node<"float"> => {
     let shut = float(0) as THREE.Node<"float">;
     for (const [dx, dz] of [[0.18, 0], [-0.18, 0], [0, 0.18], [0, -0.18]]) shut = shut.add(clamp(canopyAt(xz.add(vec2(dx, dz))).sub(up).div(0.27), float(0), float(1)));
-    return float(1).sub(shut.mul(0.25).mul(uShade.y));
+    return float(1).sub(shut.mul(0.25).mul(uShade.y)).mul(options.world?.sky ? clamp(options.world.sky(xz), float(0), float(1)) : float(1));
   };
   /** What a leaf or the ground is lit by where the sun does not reach it: the sky's light alone. */
   const inShade = () => uShadeTint.div(mix(uShadeTint, uSunTint, 0.62));

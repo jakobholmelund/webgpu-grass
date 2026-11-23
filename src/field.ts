@@ -195,27 +195,68 @@ export function speciesMap(m: GrassMap): SpeciesMapSource {
     bounds: { x0: m.x0, z0: m.z0, x1: m.x0 + nx * cell, z1: m.z0 + nz * cell },
     sample(xz) {
       const t = xz.sub(vec2(m.x0, m.z0)).div(cell);
-      const uv = t.div(size);
-      const [a, b, c] = textures.map((tex) => texture(tex, uv).level(float(0)));
-      const shares = [a.r, a.g, a.b, a.a, b.r, b.g, b.b, b.a, c.r];
-      // The species with most of the ground here, and how far ahead of the next it is.
-      let most = shares[0];
-      let next = float(0) as typeof most;
-      let which = float(0) as typeof most;
-      for (let k = 1; k < CHANNELS; k++) {
-        const leads = step(most, shares[k]);
-        next = mix(max(next, shares[k]), most, leads);
-        which = mix(which, float(k < CHANNELS - 1 ? k : NO_GRASS), leads);
-        most = max(most, shares[k]);
-      }
-      const inside = step(float(0), t.x).mul(step(float(0), t.y)).mul(step(t.x, float(nx))).mul(step(t.y, float(nz)));
       // (Across a border the lead grows about as the distance over the blur's width does.)
-      const edge = most.sub(next).mul(1.25 * SMOOTH_CELLS * cell);
-      return { species: mix(float(NO_GRASS), which, inside), edge };
+      return leaderOf(textures, t.div(size), Array.from({ length: CHANNELS }, (_, k) => (k < CHANNELS - 1 ? k : NO_GRASS)), 1.25 * SMOOTH_CELLS * cell);
     },
     dispose() {
       for (const tex of textures) tex.dispose();
     },
+  };
+}
+
+/**
+ * Which of several fields leads at a place, and by how much. Each channel of each texture is one
+ * surface's field: how much of the ground about a place is that surface's (or how far inside it the
+ * place is: any measure that is highest for the surface the place belongs to, on one scale for all).
+ * `species[k]` is the species (or `NO_GRASS`) of channel `k`, counted r, g, b, a through the textures
+ * in turn. The border between two surfaces is where their fields are level, and `edgePerLead` is the
+ * metres to it for a lead of 1 over the next.
+ */
+const leaderOf = (textures: readonly THREE.Texture[], uv: Vec2, species: readonly number[], edgePerLead: number): { species: Float; edge: Float } => {
+  const taken = textures.map((tex) => texture(tex, uv).level(float(0)));
+  const shares = species.map((_, k) => [taken[k >> 2].r, taken[k >> 2].g, taken[k >> 2].b, taken[k >> 2].a][k & 3]);
+  // The surface with most of the ground here, and how far ahead of the next it is.
+  let most = shares[0];
+  let next = float(-1e6) as typeof most;
+  let which = float(species[0]) as typeof most;
+  for (let k = 1; k < shares.length; k++) {
+    const leads = step(most, shares[k]);
+    next = mix(max(next, shares[k]), most, leads);
+    which = mix(which, float(species[k]), leads);
+    most = max(most, shares[k]);
+  }
+  const inside = step(float(0), uv.x).mul(step(float(0), uv.y)).mul(step(uv.x, float(1))).mul(step(uv.y, float(1)));
+  return { species: mix(float(NO_GRASS), which, inside), edge: most.sub(next).mul(edgePerLead) };
+};
+
+/** A host's own fields, one to a surface, as textures over a rectangle of ground. */
+export interface FieldMap {
+  /** The textures, each with up to four surfaces' fields in its channels. Looked up with whatever filter they are set to. */
+  fields: readonly THREE.Texture[];
+  /** The species' row (or `NO_GRASS`) for each channel, r, g, b, a through the textures in turn. Two surfaces may be one species. */
+  species: readonly number[];
+  /** The ground the textures cover (m): their first corner, and how far they go in x and in z. */
+  x0: number;
+  z0: number;
+  width: number;
+  depth: number;
+  /** Metres to the border for a lead of 1 between the leading field and the next. */
+  edgePerLead: number;
+}
+
+/**
+ * A map source from a host's own fields: a course that already keeps a field for each of its surfaces
+ * (how much of the ground about a place is green, fairway, rough, sand) has its map already. The place
+ * belongs to the surface whose field is highest there.
+ */
+export function fieldMap(m: FieldMap): MapSource {
+  if (m.species.length === 0 || m.species.length > m.fields.length * 4) throw new Error(`${m.species.length} species for ${m.fields.length} textures of four channels`);
+  return {
+    bounds: { x0: m.x0, z0: m.z0, x1: m.x0 + m.width, z1: m.z0 + m.depth },
+    sample(xz) {
+      return leaderOf(m.fields, xz.sub(vec2(m.x0, m.z0)).div(vec2(m.width, m.depth)), m.species, m.edgePerLead);
+    },
+    dispose() {},
   };
 }
 
