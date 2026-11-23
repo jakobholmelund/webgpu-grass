@@ -135,6 +135,10 @@ const SWING_FROM_M = 0.045;
 const SWING_FULL_M = 0.11;
 /** A leaf this many pixels broad in the picture shows its shine as narrow as it is; a narrower leaf shows it spread out. */
 const SHINE_FULL_PIXELS = 6;
+/** Mown turf no taller than this (m) is one even sward; by twice this it is plants again. */
+const SWARD_BELOW_M = 0.03;
+/** Plants along the side of a square of leaves. */
+const LAYER_SIDE = 332;
 /** The leaves' swing runs downwind in waves this long (m). */
 const SWING_WAVE_M = 1.8;
 /** How far (radians of its swing, either way) a leaf is out of step with those about it. */
@@ -953,7 +957,12 @@ export function createGrass(options: GrassOptions): Grass {
     const rb = hashCell(hcell.add(b.mul(7.3)));
     // A tuft's blades stand about its root, a mown sward's over its whole cell; none over the border.
     const footRadius = mix(float(0.02).add(rb.mul(0.16)), float(0.03).add(pow(rb, float(0.5)).mul(0.17)), isCut);
-    const foot = root.add(vec3(out2.x, 0, out2.y).mul(fine ? float(0) : min(footRadius, sh.y)));
+    // (Close-mown turf is not plants standing apart: it is one sward, its shoots as near each other one
+    // way as another. So a mown plant's leaves stand spread over the whole of the plant's own cell, each
+    // its own shoot, and not in a bunch at the cell's middle with bare ground showing round it.)
+    const sward = isCut.mul(float(1).sub(smoothstep(float(SWARD_BELOW_M), float(SWARD_BELOW_M * 2), stand.x)));
+    const swardOut = vec2(hashCell(hcell.add(b.mul(4.1).add(71.0))), hashCell(hcell.add(b.mul(6.7).add(83.0)))).sub(0.5).mul((o.range * 2) / LAYER_SIDE).mul(sward);
+    const foot = root.add(fine ? vec3(swardOut.x, 0, swardOut.y).mul(o.field ? 1 : 0) : vec3(out2.x, 0, out2.y).mul(min(footRadius, sh.y)));
     const spinTo = hashCell(hcell.add(19.3)).mul(6.2832);
     const toCam = o.spin ? vec2(cos(spinTo), sin(spinTo)) : normalize(vec2(seenFrom.x.sub(foot.x), seenFrom.z.sub(foot.z)).add(1e-4));
     // Mown grass has no tip: the mower took it. A cut leaf ends in a slant,
@@ -980,7 +989,8 @@ export function createGrass(options: GrassOptions): Grass {
     const turn = hashCell(hcell.add(b.mul(5.9).add(41.0))).sub(0.5).mul(2.1).add(gy.mul(0.5).mul(cutSide)).mul(form.y);
     const side = vec3(toCam.y.negate(), 0, toCam.x).mul(cos(turn)).add(vec3(toCam.x, 0, toCam.y).mul(sin(turn)));
     // (Half the leaf's breadth: the strip's vertices stand at -1 and 1 across it.)
-    const leafWidth = blade.x.add(rb.mul(blade.y)).mul(0.5).mul(float(1).add(uStyle.x.mul(2.5)));
+    // (A dead leaf has dried and rolled in on itself: half as broad as it was.)
+    const leafWidth = blade.x.add(rb.mul(blade.y)).mul(0.5).mul(float(1).add(uStyle.x.mul(2.5))).mul(mix(float(1), float(0.5), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w)));
     // In a field a leaf is never drawn thinner than a pixel or so, or it
     // flickers in and out; and a leaf broadened for the leaves thinned out
     // about it is never broadened past a few pixels, so what is seen close,
