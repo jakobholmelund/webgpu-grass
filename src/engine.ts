@@ -307,6 +307,8 @@ export function createGrass(options: GrassOptions): Grass {
   const SHADOW_BIAS_M = 0.006;
   /** How many of the picture's pixels apart, along the sun's ray over level ground, two leaves must be for one to shadow the other. */
   const SHADOW_PIXELS_APART = 1.5;
+  /** A stand's leaves shadow each other by the picture in full once the stand is this many of its pixels tall, measured along the ground under the sun; at one, not at all. */
+  const SHADOW_PIXELS_TALL = 3;
   const SHADOW_DEEP_M = 60;
   /** Only the squares of leaves that reach no further than this (m) are drawn into it: the two nearest. */
   const SHADOW_NEAR_RANGE_M = 2;
@@ -321,7 +323,7 @@ export function createGrass(options: GrassOptions): Grass {
   const uShadowOn = uniform(0);
   const sunCam = new THREE.OrthographicCamera(-SHADOW_HALF_M, SHADOW_HALF_M, SHADOW_HALF_M, -SHADOW_HALF_M, 0.1, SHADOW_DEEP_M);
   /** Whether the sun reaches a point past the leaves about it (x: 1 it does, 0 it does not), and how far that is known (y: 0 outside the picture). */
-  const leafShadow = (at: Vec3): Vec2 => {
+  const leafShadow = (at: Vec3, stands: THREE.Node<"float">): Vec2 => {
     const clip = uSunMat.mul(vec4(at, 1));
     const inPicture = vec2(clip.x.mul(0.5).add(0.5), clip.y.mul(-0.5).add(0.5));
     const node = texture(shadowTargets[0].depthTexture!, inPicture).level(float(0));
@@ -333,7 +335,10 @@ export function createGrass(options: GrassOptions): Grass {
     // are not in each other's shadow by it, or a short sward comes out in blocks the size of the pixels.)
     const along = pow(max(float(1).sub(uSun.y.mul(uSun.y)), float(0)), float(0.5)).div(max(uSun.y, float(0.05)));
     const apart = along.mul(SHADOW_PIXELS_APART * 2 * SHADOW_HALF_M / SHADOW_SIZE).add(SHADOW_BIAS_M);
-    return vec2(step(clip.z.sub(apart.div(SHADOW_DEEP_M)), nearest), known);
+    // (And a stand no taller than that reach is leaves the picture cannot tell apart at all: there the
+    // picture says nothing, and each leaf is in the sun or out of it by how deep in the stand it is.)
+    const toldApart = smoothstep(float(1), float(SHADOW_PIXELS_TALL), stands.div(along.mul(2 * SHADOW_HALF_M / SHADOW_SIZE)));
+    return vec2(step(clip.z.sub(apart.div(SHADOW_DEEP_M)), nearest), known.mul(toldApart));
   };
   const noiseTex = makeNoiseTexture();
   const table = makeSpeciesTable();
@@ -776,7 +781,7 @@ export function createGrass(options: GrassOptions): Grass {
     const windTakes = min(smoothstep(float(0.075), float(0.17), row(k, 0).x).mul(float(1).sub(row(k, 2).w)).mul(1.4), float(1));
     const blown = float(1).add(gustIs.sub(0.5).mul(windTakes).mul(clamp(uWind.z.div(8.0), float(0), float(1.7))).mul(far).mul(GUST_PALE));
     // (Bare ground is shaded as grown ground is: a path beside tall grass lies in its shadow.)
-    const onGround = leafShadow(positionWorld);
+    const onGround = leafShadow(positionWorld, row(k, 0).x);
     const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), onGround.x), onGround.y);
     return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
   };
@@ -1018,7 +1023,7 @@ export function createGrass(options: GrassOptions): Grass {
       const sunGetsTo = pow(max(rootIs, float(0.02)), float(1).sub(gPos.y));
       const ownLuck = hashCell(hcell.add(b.mul(11.7).add(87.0)));
       const inSun = smoothstep(ownLuck.mul(0.9).sub(0.06), ownLuck.mul(0.9).add(0.06), sunGetsTo);
-      const shadowed = o.field ? leafShadow(worldPos) : vec2(1, 0);
+      const shadowed = o.field ? leafShadow(worldPos, tall) : vec2(1, 0);
       const dapple = mix(mix(float(1), mix(float(0.58), float(1.14), inSun), float(1).sub(calm).mul(uLight).mul(1.4).min(1)), mix(float(LEAF_IN_SHADE), float(1.1), shadowed.x), shadowed.y);
       const turned = mix(mix(float(0.8), float(1.18), abs(dot(face, uSun))), float(1), calm).mul(inFold).mul(dapple);
       // its own green, a little to the yellow or to the blue of its neighbours';
