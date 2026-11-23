@@ -135,6 +135,20 @@ const SWING_FROM_M = 0.045;
 const SWING_FULL_M = 0.11;
 /** A leaf this many pixels broad in the picture shows its shine as narrow as it is; a narrower leaf shows it spread out. */
 const SHINE_FULL_PIXELS = 6;
+/** A leaf this many pixels broad in the picture begins to show its own surface (its halves, rib and edges); at two and a half times this, all of it. */
+const LEAF_DETAIL_FROM_PX = 5;
+/** And its veins from this many: there are `LEAF_VEINS` of them across it, and each needs a few pixels. */
+const LEAF_VEINS_FROM_PX = 26;
+const LEAF_VEINS = 7;
+/** How much lighter the half of a leaf turned to the sun is, and darker the other (of the leaf's colour, at full side-on). */
+const LEAF_HALVES = 0.2;
+/** How dark the rib's groove is, and how wide (of the leaf's breadth). */
+const LEAF_RIB = 0.22;
+const LEAF_RIB_WIDE = 0.035;
+/** How much darker a leaf is at its very edge. */
+const LEAF_RIM = 0.14;
+/** How dark the line between two veins is. */
+const LEAF_VEIN = 0.07;
 /** Mown turf no taller than this (m) is one even sward; by twice this it is plants again. */
 const SWARD_BELOW_M = 0.03;
 /** Plants along the side of a square of leaves. */
@@ -1176,7 +1190,10 @@ export function createGrass(options: GrassOptions): Grass {
     const against = mix(vec3(0.2140), mix(ownCol, vec3(dot(ownCol, vec3(0.3, 0.5, 0.2))), isDry), picture.z);
     // How much of the strip drawn is leaf: a leaf thinner than the pixel it was widened to is that much see-through.
     const cover = fine && o.field ? clamp(leafWidth.div(seen), float(0.5), float(1)) : float(1);
-    return { pos: worldPos, col, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout) };
+    // What is drawn on the leaf itself, pixel by pixel, when it is broad enough in the picture to show it
+    // (see `leafMaterial`): how many pixels broad it is there, and how far its face is turned side-on to the sun.
+    const pixelsBroad = o.field ? width.mul(2).div(max(dist.mul(uPixel), float(1e-6))).mul(float(1).sub(flat)).mul(float(1).sub(uFromSun)) : float(40).mul(float(1).sub(flat));
+    return { pos: worldPos, col, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout), surface: vec2(pixelsBroad, dot(side, uSun)) };
   };
 
   /** The leaves' material: unlit (the colour is worked out in `leaf`), the scene's fog applied. */
@@ -1188,7 +1205,23 @@ export function createGrass(options: GrassOptions): Grass {
     const texel = texture(leafTex, vec2(vUv.x, vUv.y)).depth(int(vUv.z.add(0.5))) as unknown as Vec4;
     const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
     mat.positionNode = out.pos;
-    mat.colorNode = vec4(vCol.mul(mix(vec3(1), min(vec3(texel.x, texel.y, texel.z).div(vec3(vAgainst.x, vAgainst.y, vAgainst.z)), vec3(4)), vUv.w)), 1);
+    // A leaf's own surface, drawn pixel by pixel across it: nothing of it shows on a leaf a few pixels
+    // broad, and from an ankle's height a leaf without it is a strip of green paper.
+    //  - its two halves, which fold up from the rib and so take the sun differently, one lit and one not;
+    //  - the rib itself, a dark groove down the middle;
+    //  - its edges, which turn away and are thin;
+    //  - its veins, which in a grass run side by side from root to tip (and need the leaf broader still).
+    const vSurface = varying(out.surface, `vGrassSurface${name}`);
+    const across = vUv.x.sub(0.5);
+    const outTo = abs(across).mul(2);
+    const shown = smoothstep(float(LEAF_DETAIL_FROM_PX), float(LEAF_DETAIL_FROM_PX * 2.5), vSurface.x);
+    const veinsShown = smoothstep(float(LEAF_VEINS_FROM_PX), float(LEAF_VEINS_FROM_PX * 2), vSurface.x);
+    const halves = sign(across).mul(vSurface.y).mul(smoothstep(float(0.02), float(0.12), abs(across))).mul(LEAF_HALVES);
+    const rib = exp(across.mul(across).div(LEAF_RIB_WIDE * LEAF_RIB_WIDE).negate()).mul(LEAF_RIB);
+    const rim = outTo.mul(outTo).mul(outTo).mul(LEAF_RIM);
+    const veins = cos(vUv.x.mul(6.2832 * LEAF_VEINS)).mul(0.5).add(0.5).mul(LEAF_VEIN);
+    const surface = float(1).add(halves.sub(rib).sub(rim).mul(shown)).sub(veins.mul(veinsShown));
+    mat.colorNode = vec4(vCol.mul(surface).mul(mix(vec3(1), min(vec3(texel.x, texel.y, texel.z).div(vec3(vAgainst.x, vAgainst.y, vAgainst.z)), vec3(4)), vUv.w)), 1);
     mat.maskNode = vAgainst.w.lessThan(0.5).or(texel.w.greaterThan(0.5));
     if (o.fine && o.field) {
       // (Where the picture has several samples to a pixel, a share of them is the leaf: a far leaf thins out and does not fatten.)
