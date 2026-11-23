@@ -130,6 +130,9 @@ const SITE_FAR_M = 9;
 const SITE_FAR_DROP = 0.3;
 /** How bright a leaf (or the ground) in another leaf's shadow is beside one in the sun: it still has the sky, and the light through the leaves. */
 const LEAF_IN_SHADE = 0.5;
+/** Grass shorter than the first (m) does not swing in the wind at all; grass as tall as the second swings freely. */
+const SWING_FROM_M = 0.045;
+const SWING_FULL_M = 0.11;
 /** A leaf folded along its rib has each half turned this far (radians) from flat, at a `fold` of 1: a shallow V. */
 const FOLD_ANGLE = 0.5;
 /** A tuft's blade is this many times as broad as a fine leaf of its species: it stands for several. */
@@ -945,7 +948,8 @@ export function createGrass(options: GrassOptions): Grass {
     // swing running up the leaf a little late towards its tip, more in a wind and less for a stiff grass.
     // (Most of what is seen of a field moving is this, and the gusts over it the rest: Sanders, GDC 2018.)
     const swingAt = uTime.mul(float(1.3).add(uWind.z.mul(0.22))).add(hashCell(hcell.add(b.mul(5.3).add(41.0))).mul(6.2832)).sub(gy.mul(1.4));
-    const swingBy = float(1).sub(row(k, 2).w.mul(0.75)).mul(float(0.014).add(min(uWind.z.div(8), float(1.5)).mul(0.034)));
+    // (Only grass long enough to swing: mown turf up to the first cut stands still in any wind, rough hardly stirs, and from deep rough up it all goes.)
+    const swingBy = smoothstep(float(SWING_FROM_M), float(SWING_FULL_M), row(k, 0).x).mul(float(1).sub(row(k, 2).w.mul(0.75))).mul(float(0.014).add(min(uWind.z.div(8), float(1.5)).mul(0.034)));
     const lean2 = o.spin ? lean0 : lean0.add(vec2(sin(swingAt), sin(swingAt.mul(2)).mul(0.5)).mul(swingBy));
     const bendPow = fine ? gy.mul(gy) : pow(gy, float(2.1));
     // The leaf bends over in an arc, and is as long bent as straight: it leans the way of `lean2`, and
