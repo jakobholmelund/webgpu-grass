@@ -67,6 +67,12 @@ export interface GrassThing {
    * To show a lie as it is, give the share of it that stands above the grass, or a little more.
    */
   keepSeen?: boolean | number;
+  /**
+   * Not a sphere but a place on the ground something stands on, `radius` across (a foot): the grass
+   * there is pressed down to a third of its height, coming back up over half as far again. `y`,
+   * `clear` and `keepSeen` mean nothing for it.
+   */
+  flat?: boolean;
 }
 
 /**
@@ -217,6 +223,8 @@ const LEAF_RIM = 0.14;
 /** How dark the line between two veins is. */
 const LEAF_VEIN = 0.07;
 /** The lane kept open between the eye and a thing in the grass is this many times the thing's own breadth: in turf, and in grass a hand high or more. */
+/** Grass under something that stands on it is this share of its height. */
+const THING_TROD_TALL = 0.35;
 const THING_LANE = 1.2;
 const THING_LANE_TALL = 2.2;
 /** Mown turf no taller than this (m) is one even sward; by twice this it is plants again. */
@@ -285,6 +293,13 @@ export interface GrassOptions {
    * compute pass and in fragment shaders both, so a texture in one is looked up at a set level.
    */
   world?: WorldLight;
+  /**
+   * The host's own noise in place of the grass's: a tiling picture of four unlike noises, one to a
+   * channel, that repeats and has mipmaps. A host whose ground asks the grass for its shading
+   * (`groundShade`) and has such a picture already gives it here, so the ground's shader looks up one
+   * picture and not two: a shader stage has sixteen on any machine.
+   */
+  noise?: THREE.Texture;
 }
 
 /** See `GrassOptions.world`. Any of them may be left out. */
@@ -295,6 +310,12 @@ export interface WorldLight {
   sky?(xz: Vec2): THREE.Node<"float">;
   /** What the grass's colour is multiplied by there: wet grass is darker, grass under leaves is lit green. */
   tint?(xz: Vec2): Vec3;
+  /**
+   * The air between a leaf and the eye: given the leaf's colour and where it is, the colour that reaches
+   * the eye. A host with haze of its own (the scene's fog is applied without this). Called for each
+   * corner of a leaf, in a vertex shader.
+   */
+  air?(colour: Vec3, at: Vec3): Vec3;
 }
 
 export interface Grass {
@@ -480,6 +501,9 @@ export function createGrass(options: GrassOptions): Grass {
       const there = step(float(1e-5), r);
       const rel = xz.sub(vec2(c.x, c.z));
       const d = length(rel);
+      // (Trodden: pressed down under something that stands on it.)
+      const trod = thingHow[i].z;
+      t = t.mul(mix(float(1), mix(float(1), float(THING_TROD_TALL), float(1).sub(smoothstep(trod.mul(0.45), max(trod.mul(1.55), float(1e-4)), d))), step(float(1e-4), trod)));
       // (The nest it has pressed.)
       const clear = thingHow[i].x;
       t = t.mul(mix(float(1), smoothstep(clear.mul(0.65), max(clear.mul(1.15), float(1e-4)), d), step(float(1e-4), clear).mul(there)));
@@ -562,7 +586,7 @@ export function createGrass(options: GrassOptions): Grass {
     const ownReach = stands.mul(SHADOW_OWN_REACH).div(max(uSun.y, float(0.05)));
     return vec4(sunPast(apart), known, toldApart, sunPast(apart.add(ownReach)));
   };
-  const noiseTex = makeNoiseTexture();
+  const noiseTex = options.noise ?? makeNoiseTexture();
   const table = makeSpeciesTable();
   const tableNode = uniformArray(table, "vec4");
   const row = (k: Int, slot: number) => tableNode.element(k.mul(SPECIES_SLOTS).add(slot)) as unknown as Vec4;
@@ -1385,7 +1409,8 @@ export function createGrass(options: GrassOptions): Grass {
     // (see `leafMaterial`): how many pixels broad it is there, and how far its face is turned side-on to the sun.
     const pixelsBroad = o.field ? width.mul(2).div(max(dist.mul(uPixel), float(1e-6))).mul(float(1).sub(flat)).mul(float(1).sub(uFromSun)) : float(40).mul(float(1).sub(flat));
     // (Nothing brighter than light itself, and never not a number: one such leaf in a picture that blooms what is bright is a lamp.)
-    const colSafe = min(max(col, vec3(0)), vec3(LEAF_BRIGHT_MOST));
+    const inAir = o.field && options.world?.air ? options.world.air(col, worldPos) : col;
+    const colSafe = min(max(inAir, vec3(0)), vec3(LEAF_BRIGHT_MOST));
     return { pos: worldPos, col: colSafe, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout), surface: vec2(pixelsBroad, dot(side, uSun)) };
   };
 
@@ -1916,8 +1941,9 @@ export function createGrass(options: GrassOptions): Grass {
       for (let i = 0; i < MAX_THINGS; i++) {
         const t = list[i];
         if (t) {
-          thingAt[i].value.set(t.x, t.y, t.z, Math.max(0, t.radius));
-          thingHow[i].value.set(Math.max(0, t.clear ?? 0), t.keepSeen === true ? 0.5 : Math.min(1, Math.max(0, t.keepSeen || 0)), 0, 0);
+          // (A flat place has no sphere: its radius is kept apart, and what is done about a sphere finds none.)
+          thingAt[i].value.set(t.x, t.y, t.z, t.flat ? 0 : Math.max(0, t.radius));
+          thingHow[i].value.set(t.flat ? 0 : Math.max(0, t.clear ?? 0), t.flat ? 0 : t.keepSeen === true ? 0.5 : Math.min(1, Math.max(0, t.keepSeen || 0)), t.flat ? Math.max(0, t.radius) : 0, 0);
         } else {
           thingAt[i].value.set(0, -9999, 0, 0);
           thingHow[i].value.set(0, 0, 0, 0);

@@ -166,6 +166,9 @@ can be read off: grass taller than a ball otherwise hides the ball. Give
 down (`true` is a half). The thing itself is the host's to draw, and it
 casts no shadow on the grass yet.
 
+A thing with `flat: true` is not a sphere but a place something stands
+on, a foot: the grass there is pressed to a third of its height.
+
 A ball's lie in rough is how much of it stands above the grass: the grass
 holds it up. `thingMiddleFor(grassTall, radius, showing)` gives the height
 of its middle above the ground for a share `showing` of it to stand above
@@ -193,6 +196,8 @@ out.
 - `world.sky(xz)`: how much of the sky it sees, 0 to 1. Under a crown, in
   a hollow.
 - `world.tint(xz)`: what the grass's colour is multiplied by. Wet grass.
+- `world.air(colour, at)`: the air between a leaf and the eye, for a host
+  with haze of its own: the colour that reaches the eye.
 
 The shaders call them in the compute pass and in fragment shaders both, so
 a texture in one is looked up at a set level. The lab's "clouds' shadows"
@@ -205,7 +210,8 @@ mean where the leaves are too far off to draw, its picture from above,
 its patches, the grass's own shade). It takes the host's colour to be the
 stand's as a whole, so give each species that colour over
 `standTone(species)` for its leaves. It adds four textures to the
-ground's shader, and a shader stage has sixteen on any machine. The lab's
+ground's shader, and a shader stage has sixteen on any machine: three if
+the host gives its own tiling noise as `createGrass({ noise })`. The lab's
 `?hostground` draws its ground this way.
 
 The leaves are thickest about the eye and thin out from it. A picture of
