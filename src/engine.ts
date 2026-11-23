@@ -172,6 +172,20 @@ const REACH_MAX = 0.24;
 const BROADEN_MAX = 1.5;
 /** A fine plant's leaves at a density of 1. A denser species has more of its layer's `blades`. */
 const PLANT_LEAVES = 3;
+/**
+ * A tussock's breadth (`Species.tussock`), as the square of its radius over the way between clumps: at
+ * hardly any tussock the clumps touch and only the corners between them are open; at 1 a tussock is a
+ * quarter of the way across.
+ */
+/** A stand this tall (m) begins to be drawn as tufts where its leaves are too thin to be seen; one two and a half times it, wholly. */
+const TUFTS_FOR_UNSEEN_FROM_M = 0.15;
+const TUSSOCK_WIDEST = 0.42;
+const TUSSOCK_SMALLEST = 0.06;
+/** A stem (`Species.stem`): how much of its thickness is left at its tip's foot, and how much darker its edges are than its middle, being turned away. */
+const STEM_TAPER = 0.45;
+/** Radians a stem tilts for a lean of 1. */
+const STEM_TILT = 1.1;
+const STEM_ROUND = 0.42;
 /** How far a leaf fully laid by the mower leans, as its tip's reach over its height: some 25 degrees. */
 const LAY_LEAN = 0.45;
 /** How far up the face of a leaf looks that is hardly laid over at all (radians from level). */
@@ -1209,8 +1223,8 @@ export function createGrass(options: GrassOptions): Grass {
     const colSt = attribute("aGrassColor", "vec4");
     const edge = attribute("aSide", "float");
     // (The fold: at a rib vertex, the half-breadth it is carried back by; the angle each half is turned through.)
-    const ribBack = o.folded ? attribute("aMid", "float") : float(0);
-    const onRib = step(float(1e-6), ribBack);
+    const ribBack0 = o.folded ? attribute("aMid", "float") : float(0);
+    const onRib = step(float(1e-6), ribBack0);
     const foldBy = uDetail.x.mul(FOLD_ANGLE);
     const tall = st.z;
     const gustHere = st.w;
@@ -1229,6 +1243,9 @@ export function createGrass(options: GrassOptions): Grass {
     const isSquare = step(float(1.5), form.x);
     const seed = form.z;
     const flat = uStyle.y;
+    // (A stem is round: it is not folded, and has no rib to be carried back.)
+    const stem = row(k, 12).y;
+    const ribBack = ribBack0.mul(float(1).sub(stem));
 
     const root = vec3(xz.x, colSt.w, xz.y);
     // (Where the leaf is seen from: the eye, also when it is the sun that draws it, for its shadow.)
@@ -1259,7 +1276,9 @@ export function createGrass(options: GrassOptions): Grass {
     // A seed head: a third of a leaf's width up a third of its height, swelling to nearly twice it below the tip.
     const seedHead = mix(float(1), mix(float(0.32), float(1.9), smoothstep(float(0.3), float(0.78), gPos.y)), seed);
     const squareX = mix(sign(gPos.x).mul(0.85), float(0), isTip);
-    const shapedX = mix(mix(gPos.x, mix(gPos.x, cutSide.mul(TOP_HALF_WIDTH), isTip), isCut), squareX, isSquare).mul(seedHead);
+    // (A stem is thickest at its foot and tapers evenly to its point.)
+    const stemX = mix(sign(gPos.x).mul(mix(float(1), float(STEM_TAPER), gPos.y)), float(0), isTip);
+    const shapedX = mix(mix(mix(gPos.x, mix(gPos.x, cutSide.mul(TOP_HALF_WIDTH), isTip), isCut), squareX, isSquare).mul(seedHead), stemX, stem);
     // (A cut-out leaf is a plain strip, its outline left to its picture.)
     const leafX = mix(shapedX, edge.mul(float(1).sub(onRib)), cutout);
     // (The slant is the mower's tear across the leaf: about as high as the leaf is broad, some nearly
@@ -1274,7 +1293,7 @@ export function createGrass(options: GrassOptions): Grass {
     const side = vec3(toCam.y.negate(), 0, toCam.x).mul(cos(turn)).add(vec3(toCam.x, 0, toCam.y).mul(sin(turn)));
     // (Half the leaf's breadth: the strip's vertices stand at -1 and 1 across it.)
     // (A dead leaf has dried and rolled in on itself: half as broad as it was.)
-    const leafWidth = blade.x.add(rb.mul(blade.y)).mul(0.5).mul(float(1).add(uStyle.x.mul(2.5))).mul(mix(float(1), float(0.5), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w)));
+    const leafWidth = blade.x.add(rb.mul(blade.y)).mul(0.5).mul(float(1).add(uStyle.x.mul(2.5))).mul(mix(float(1), mix(float(0.5), float(1), stem), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w)));
     // In a field a leaf is never drawn thinner than a pixel or so, or it
     // flickers in and out; and a leaf broadened for the leaves thinned out
     // about it is never broadened past a few pixels, so what is seen close,
@@ -1294,7 +1313,8 @@ export function createGrass(options: GrassOptions): Grass {
     // has a level top of cut ends, with the shorter leaves' own tips below it.
     const mown = max(isCut, isSquare);
     // (A dead leaf is an old one: the plant's lowest, down in the stand under the live ones, not up among their tips.)
-    const oldLeaf = mix(float(1), float(DEAD_LEAF_TALL), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w));
+    // (A dead stem is last year's, and stands as tall as this year's.)
+    const oldLeaf = mix(float(1), mix(float(DEAD_LEAF_TALL), float(1), stem), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w));
     const bladeTall = mix(tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y))), tall.mul(float(0.85).add(rh.mul(0.95))), mown).mul(oldLeaf);
 
     // The leaf arches: upright at the root, bending over more and more towards the tip.
@@ -1323,9 +1343,12 @@ export function createGrass(options: GrassOptions): Grass {
     // (How far along itself a mown leaf gets before the mower's height: it rises as sin(bend g) / bend of its length.)
     const cutAt = mix(float(1), asin(clamp(tall.mul(bendAll).div(max(bladeTall, float(1e-5))), float(0), float(1))).div(bendAll), mown);
     const bendHere = bendAll.mul(gy).mul(cutAt);
-    const goesOut = float(1).sub(cos(bendHere)).div(bendAll);
-    const goesUp = sin(bendHere).div(bendAll);
-    const runAll = vec3(leanTo.x.mul(sin(bendHere)), cos(bendHere), leanTo.y.mul(sin(bendHere)));
+    // (A stem does not bow: it is stiff, and stands straight at whatever angle it leans, so a tussock is a
+    // sheaf of straight stems fanning out from its foot.)
+    const tiltBy = clamp(leanBy.mul(STEM_TILT), float(0), float(1.2));
+    const goesOut = mix(float(1).sub(cos(bendHere)).div(bendAll), sin(tiltBy).mul(gy), stem);
+    const goesUp = mix(sin(bendHere).div(bendAll), cos(tiltBy).mul(gy), stem);
+    const runAll = normalize(mix(vec3(leanTo.x.mul(sin(bendHere)), cos(bendHere), leanTo.y.mul(sin(bendHere))), vec3(leanTo.x.mul(sin(tiltBy)), cos(tiltBy), leanTo.y.mul(sin(tiltBy))), stem));
     const faceAll = normalize(cross(side, runAll));
     const rawPos = foot.add(side.mul(leafX).mul(width)).add(vec3(0, bladeTall.mul(goesUp), 0)).add(vec3(leanTo.x, 0, leanTo.y).mul(bladeTall).mul(goesOut)).sub(faceAll.mul(ribBack.mul(width).mul(sin(foldBy).div(cos(foldBy)))));
     // (The root is sunk a little so no leaf floats on a slope: 3 cm for tall grass, less for a leaf shorter than that.)
@@ -1360,9 +1383,11 @@ export function createGrass(options: GrassOptions): Grass {
       // And each leaf takes the light its own way (none of this where the style is calm):
       // the face it turns to the sun or from it, either side of it alike;
       // (Each half of a folded leaf faces its own way: turned about the leaf's length, in towards the rib.)
-      const face = o.folded ? normalize(faceAll.mul(cos(foldBy)).sub(side.mul(edge).mul(sin(foldBy)))) : normalize(faceAll.add(side.mul(edge).mul(0.3)));
+      const faceLeaf = o.folded ? normalize(faceAll.mul(cos(foldBy)).sub(side.mul(edge).mul(sin(foldBy)))) : normalize(faceAll.add(side.mul(edge).mul(0.3)));
+      // (A stem's face turns away to either side, as a cylinder's does.)
+      const face = normalize(mix(faceLeaf, faceAll.add(side.mul(edge).mul(0.9)), stem));
       // (And down in the fold less of the sky is seen than out at the edges: the deeper the fold, the darker its rib.)
-      const inFold = float(1).sub(onRib.mul(sin(foldBy)).mul(0.45).mul(float(1).sub(calm)));
+      const inFold = float(1).sub(onRib.mul(sin(foldBy)).mul(0.45).mul(float(1).sub(calm)).mul(float(1).sub(stem)));
       // And each leaf is in the sun or out of it: the sun gets down between the others to some depth, a
       // different depth for every leaf, so each has its own line with sun above it and the others' shade
       // below. (How often the sun reaches a height is the same fall through the stand as the roots' shade.)
@@ -1380,7 +1405,7 @@ export function createGrass(options: GrassOptions): Grass {
       // direction: Barre-Brisebois and Bouchard 2011. By PROSPECT-D a grass leaf passes about as much green
       // as it sends back, nine tenths as much red and next to no blue: what comes through is the leaf's
       // colour without its blue, a yellower and deeper green.)
-      const through = pow(max(dot(V.negate(), normalize(uSun.add(face.mul(0.2)))), float(0)), float(4)).mul(float(1).sub(abs(dot(face, V)).mul(0.5))).mul(gPos.y).mul(float(1).sub(calm));
+      const through = pow(max(dot(V.negate(), normalize(uSun.add(face.mul(0.2)))), float(0)), float(4)).mul(float(1).sub(abs(dot(face, V)).mul(0.5))).mul(gPos.y).mul(float(1).sub(calm)).mul(float(1).sub(stem));
       // and the sun off it, where its face lies between the sun and the eye. A leaf's shine is white, not
       // its own colour, weak face on and strong at a glancing angle (Fresnel, for wax of index 1.5), and
       // narrower along the leaf than across it (wheat leaves: roughness 0.18 along the veins, 0.46 across).
@@ -1470,7 +1495,7 @@ export function createGrass(options: GrassOptions): Grass {
     // (Nothing brighter than light itself, and never not a number: one such leaf in a picture that blooms what is bright is a lamp.)
     const inAir = o.field && options.world?.air ? options.world.air(col, worldPos) : col;
     const colSafe = min(max(inAir, vec3(0)), vec3(LEAF_BRIGHT_MOST));
-    return { pos: worldPos, col: colSafe, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout), surface: vec2(pixelsBroad, dot(side, uSun)) };
+    return { pos: worldPos, col: colSafe, cover, uv: vec4(u, gPos.y, max(picture.x, float(0)), shows), against: vec4(against, cutout), surface: vec3(pixelsBroad, dot(side, uSun), stem) };
   };
 
   /** The leaves' material: unlit (the colour is worked out in `leaf`), the scene's fog applied. */
@@ -1497,7 +1522,10 @@ export function createGrass(options: GrassOptions): Grass {
     const rib = exp(across.mul(across).div(LEAF_RIB_WIDE * LEAF_RIB_WIDE).negate()).mul(LEAF_RIB);
     const rim = outTo.mul(outTo).mul(outTo).mul(LEAF_RIM);
     const veins = cos(vUv.x.mul(6.2832 * LEAF_VEINS)).mul(0.5).add(0.5).mul(LEAF_VEIN);
-    const surface = float(1).add(halves.sub(rib).sub(rim).mul(shown)).sub(veins.mul(veinsShown));
+    const leafSurface = float(1).add(halves.sub(rib).sub(rim).mul(shown)).sub(veins.mul(veinsShown));
+    // (A stem is a cylinder: lighter on the side the sun is, and darker out at both edges, which are turned away.)
+    const stemSurface = float(1).add(across.mul(2).mul(vSurface.y).mul(STEM_ROUND).sub(outTo.mul(outTo).mul(STEM_ROUND)).mul(shown));
+    const surface = mix(leafSurface, stemSurface, vSurface.z);
     // (No brighter than the host allows, `look.brightest`: by its brightest channel, so a leaf held back keeps its colour.)
     const drawn = vCol.mul(surface).mul(mix(vec3(1), min(vec3(texel.x, texel.y, texel.z).div(vec3(vAgainst.x, vAgainst.y, vAgainst.z)), vec3(4)), vUv.w));
     mat.colorNode = vec4(drawn.mul(min(float(1), uBrightest.div(max(max(drawn.x, drawn.y), max(drawn.z, float(1e-4)))))), 1);
@@ -1623,7 +1651,12 @@ export function createGrass(options: GrassOptions): Grass {
         // Nor does a tuft stand within a stride of the eye, where its broad
         // blades are flat green wedges before the lens: that ground is the
         // fine leaves' (the host aims them at the foreground, see `update`).
-        const layerOn = fine ? float(1) : tufted.mul(smoothstep(uLeafReach.mul(0.45), uLeafReach, dist)).mul(smoothstep(float(0.9), float(1.5), dist));
+        // (A tall stand's tufts also stand wherever its leaves are too thin in the picture to be drawn, which
+        // on a small picture, or from above, is nearer than the leaves' reach: short grass that far off is
+        // its ground's colour and nothing is missed, but a stand to the knee is a shape, and without it
+        // there is a bare strip between the last leaves and the first tufts.)
+        const leavesUnseen = float(1).sub(leafSeen(row(k, 1).x.add(row(k, 1).y.mul(0.5)), dist)).mul(smoothstep(float(TUFTS_FOR_UNSEEN_FROM_M), float(TUFTS_FOR_UNSEEN_FROM_M * 2.5), tall0));
+        const layerOn = fine ? float(1) : tufted.mul(max(smoothstep(uLeafReach.mul(0.45), uLeafReach, dist), leavesUnseen)).mul(smoothstep(float(0.9), float(1.5), dist));
         const grow = alive.mul(rooted).mul(rangeFade).mul(thin).mul(layerOn);
 
         const tallNode = tall0.toVar();
@@ -1673,6 +1706,13 @@ export function createGrass(options: GrassOptions): Grass {
         const clumpTone = hash21(clumpId.add(71.1)).sub(0.5);
         tallNode.mulAssign(mix(float(1), clumpTall, clumped));
         const base = vec3(baseCol.x, baseCol.y, baseCol.z).mul(vec3(1).add(vec3(0.22, 0.12, -0.07).mul(clumpTone).mul(clumped)));
+        // Tussocks (`Species.tussock`): the plant grows only within some way of its clump's centre, with
+        // open ground beyond: the further, the smaller the tussocks; some broad and some small, and the
+        // odd one missing. (In squared shares of the way between clumps, as `clumpBest` is.)
+        const tussockAmt = row(k, 12).x;
+        const tussockWide = mix(float(TUSSOCK_WIDEST), float(TUSSOCK_SMALLEST), tussockAmt).mul(mix(float(0.45), float(1.5), hash21(clumpId.add(29.9))));
+        const inTussock = mix(float(1), float(1).sub(smoothstep(tussockWide.mul(0.55), tussockWide, clumpBest.add(chB.r.sub(0.5).mul(0.05)))), step(float(0.01), tussockAmt));
+        tallNode.mulAssign(inTussock);
 
         // (The tufts thin with distance, and those left are drawn broader.)
         const lodKeep = fine ? float(1) : step(r0, mix(float(1.0), float(0.45), smoothstep(float(18), float(38), dist)));

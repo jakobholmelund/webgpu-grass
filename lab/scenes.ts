@@ -5,7 +5,7 @@
 //
 // The first eight are a golf course's surfaces, short to tall, one to a scene.
 
-import { MORE_TURF, type Species, TURF_SPECIES, cloneSpecies } from "../src/index";
+import { MORE_PLANTS, MORE_TURF, type Species, TURF_SPECIES, cloneSpecies } from "../src/index";
 
 export interface Scene {
   id: string;
@@ -171,6 +171,17 @@ export const SCENES: Scene[] = [
     plot: ROUGH, row: ROUGH,
     view: { x: -4, z: -12, eye: 0.35, yaw: 2.6, pitch: -0.14, fov: 48 },
     sun: [200, 58], wind: [30, 2],
+  },
+  {
+    id: "rushes",
+    title: "Soft rush",
+    blurb: "A marsh's plant, not a grass: no leaves, only round stiff stems, in tussocks with open ground between and last year's dead stems among the green.",
+    species: turf((list) => {
+      list[MEADOW] = cloneSpecies([MORE_PLANTS.rush])[0];
+    }),
+    plot: MEADOW, row: MEADOW,
+    view: { x: -20, z: 6, eye: 1.7, yaw: 2.2, pitch: -0.32, fov: 52 },
+    sun: [130, 24], wind: [200, 4],
   },
   {
     id: "storybook",
