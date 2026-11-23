@@ -18,7 +18,7 @@
 // only chooses which plants are drawn.
 
 import * as THREE from "three/webgpu";
-import { Fn, If, abs, asin, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, distance, dot, exp, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, If, Loop, abs, asin, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, distance, dot, exp, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
 import { type HeightSource, type MapSource, type MowSource } from "./field";
 import { makeNoiseTexture } from "./noise";
 import { MAX_SPECIES, SPECIES_SLOTS, type Species, makeSpeciesTable, packSpecies } from "./species";
@@ -48,6 +48,15 @@ export function standTone(species: Pick<Species, "height" | "density" | "rootSha
  * its reach: short of all of it, since the ground is not level and may rise to meet the eye.
  */
 const SEEN_MARGIN = 0.85;
+/** How many points a trail through the grass has at most (see `Grass.setTrail`). */
+export const MAX_TRAIL = 24;
+/** Two points of a trail further apart than this (m) are not joined. */
+const TRAIL_GAP_M = 1.8;
+/** Grass a thing went through is back up after this long (s), and at its lowest this share of its height. */
+const TRAIL_GONE_S = 16;
+const TRAIL_TALL = 0.65;
+/** A stir of the air moves the grass within this far (m) of it. */
+const STIR_REACH_M = 0.32;
 /** How many things can lie in the grass at once (see `Grass.setThings`). */
 export const MAX_THINGS = 4;
 
@@ -374,6 +383,15 @@ export interface Grass {
    */
   setThings(list: readonly GrassThing[]): void;
   /**
+   * Where something has gone through the grass, in the order it went: at most `MAX_TRAIL` points, each a
+   * place, how broad the thing was there (m) and when it was there (s, on `update`'s clock). The grass is
+   * crushed along the track between each point and the next and pushed out to its sides, and comes back
+   * up over a quarter of a minute. None, to clear it.
+   */
+  setTrail(points: readonly { x: number; z: number; radius: number; at: number }[]): void;
+  /** A stir of the air at a place: the grass within a stride of it is pushed out from it and along (`dx`, `dz`: which way, and how hard, 1 being a club's swing). None, for still. */
+  setStir(stir: { x: number; z: number; dx: number; dz: number } | null): void;
+  /**
    * The pictures the species' leaves can have, by the names the species use
    * (`Species.leafTexture`): at most `MAX_LEAF_TEXTURES`. Each is kept at 64
    * by 256, the leaf's root at its bottom edge.
@@ -492,6 +510,47 @@ export function createGrass(options: GrassOptions): Grass {
   // What lies in the grass: each a sphere (its centre and radius), and how the grass is about it (x: cleared to this far, y: kept in sight).
   const thingAt = Array.from({ length: MAX_THINGS }, () => uniform(new THREE.Vector4(0, -9999, 0, 0)));
   const thingHow = Array.from({ length: MAX_THINGS }, () => uniform(new THREE.Vector4(0, 0, 0, 0)));
+  // Where something has gone through the grass (x, z, how broad, when), in the order it went; and a stir of the air at a place (x, z, and which way and how hard).
+  const trail = uniformArray(Array.from({ length: MAX_TRAIL }, () => new THREE.Vector4()), "vec4");
+  const uTrailCount = uniform(0);
+  const uStir = uniform(new THREE.Vector4());
+  /**
+   * What a plant rooted at `xz` has of the trail and the stir: which way it is pushed over (x, y), and
+   * what is left of its height (z). Grass a thing went through is crushed along its track and pushed
+   * out to either side, and comes back up over a quarter of a minute; a stir pushes it out and along.
+   */
+  const pressedAt = (xz: Vec2): Vec3 => {
+    const tall = float(1).toVar();
+    const push = vec2(0, 0).toVar();
+    If(uTrailCount.greaterThan(1), () => {
+      Loop({ start: int(0), end: int(uTrailCount.sub(1)), type: "int", condition: "<" }, ({ i }: { i: THREE.Node<"int"> }) => {
+        const a = trail.element(i) as unknown as Vec4;
+        const b = trail.element(i.add(1)) as unknown as Vec4;
+        const age = uTime.sub(b.w);
+        const from = vec2(a.x, a.y);
+        const along = vec2(b.x, b.y).sub(from);
+        const span = dot(along, along);
+        // (Two points far apart are two visits, not a track between them: then it is the later one alone.)
+        const t = mix(float(1), clamp(dot(xz.sub(from), along).div(max(span, float(1e-6))), float(0), float(1)), step(span, float(TRAIL_GAP_M * TRAIL_GAP_M)));
+        const off = xz.sub(from.add(along.mul(t)));
+        const d = length(off);
+        const r = max(b.z, float(0.038));
+        const live = step(float(0), age).mul(step(age, float(TRAIL_GONE_S))).mul(step(float(0.001), b.z)).mul(step(d, r.mul(2)));
+        const spring = float(1).sub(smoothstep(float(2), float(TRAIL_GONE_S), age)).mul(live);
+        const crush = float(1).sub(smoothstep(r.mul(0.25), r.mul(1.45), d)).mul(spring);
+        const ring = float(1).sub(smoothstep(r.mul(0.35), r.mul(1.9), d)).mul(smoothstep(float(0.01), r.mul(0.45), d)).mul(spring);
+        push.addAssign(off.div(max(d, float(1e-4))).mul(ring).mul(0.18));
+        tall.assign(min(tall, mix(float(1), float(TRAIL_TALL), crush)));
+      });
+    });
+    const way = vec2(uStir.z, uStir.w);
+    const hard = length(way);
+    const from = xz.sub(vec2(uStir.x, uStir.y));
+    const away = length(from);
+    const out = normalize(from.div(max(away, float(1e-4))).add(way.div(max(hard, float(1e-4))).mul(1.15)));
+    push.addAssign(out.mul(float(1).sub(smoothstep(float(0.05), float(STIR_REACH_M), away)).mul(min(hard, float(1.25))).mul(step(float(0.01), hard)).mul(0.25)));
+    return vec3(push.x, push.y, tall);
+  };
   /** How tall a plant rooted at `xz` (its ground at `gy`) stands among the things in the grass: `tall`, less whatever they take. `luck` 0..1 is the plant's own. */
   const amongThings = (tall: THREE.Node<"float">, xz: Vec2, gy: THREE.Node<"float">, luck: THREE.Node<"float">): THREE.Node<"float"> => {
     let t = tall;
@@ -1617,7 +1676,8 @@ export function createGrass(options: GrassOptions): Grass {
 
         // (The tufts thin with distance, and those left are drawn broader.)
         const lodKeep = fine ? float(1) : step(r0, mix(float(1.0), float(0.45), smoothstep(float(18), float(38), dist)));
-        const tall = fine ? amongThings(tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep), xz, gy, hashCell(hcell.add(57.3))) : tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep);
+        const pressed = fine ? pressedAt(xz) : vec3(0, 0, 1);
+        const tall = (fine ? amongThings(tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep), xz, gy, hashCell(hcell.add(57.3))) : tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep)).mul(pressed.z);
 
         // Gusts: wind does not arrive as even waves. A field of stronger and
         // weaker air, broad patches with smaller ones inside, travels downwind
@@ -1639,7 +1699,9 @@ export function createGrass(options: GrassOptions): Grass {
           .add(clumpOut.mul(0.22).mul(clumped))
           .add(fine ? vec2(cos(chaosTurn), sin(chaosTurn)).mul(disorder.mul(0.24)) : vec2(0, 0))
           // (A leaf the roller went over leans the way it went.)
-          .add(lay.mul(LAY_LEAN));
+          .add(lay.mul(LAY_LEAN))
+          // (And over the way whatever went through it, or stirred it, pushed it.)
+          .add(vec2(pressed.x, pressed.y));
 
         // (What of the sky it sees is worked out half way up it, and is in its colour; the sun at its root and at its tip go with it, for the leaf to shade between.)
         const colLit = tone(xz, base).mul(siteTint(xz)).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
@@ -1937,6 +1999,15 @@ export function createGrass(options: GrassOptions): Grass {
     environment: { sun: uSun.value, sunTint: uSunTint.value, shadeTint: uShadeTint.value, wind: uWind.value },
     style,
     look,
+    setTrail(points) {
+      const n = Math.min(points.length, MAX_TRAIL);
+      for (let i = 0; i < n; i++) (trail.array[i] as THREE.Vector4).set(points[i].x, points[i].z, points[i].radius, points[i].at);
+      uTrailCount.value = n;
+    },
+    setStir(stir) {
+      if (stir) uStir.value.set(stir.x, stir.z, stir.dx, stir.dz);
+      else uStir.value.set(0, 0, 0, 0);
+    },
     setThings(list) {
       for (let i = 0; i < MAX_THINGS; i++) {
         const t = list[i];

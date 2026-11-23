@@ -169,6 +169,12 @@ casts no shadow on the grass yet.
 A thing with `flat: true` is not a sphere but a place something stands
 on, a foot: the grass there is pressed to a third of its height.
 
+`grass.setTrail(points)` is where something has gone through the grass: the
+grass is crushed along the track and pushed out to its sides, and comes
+back up over a quarter of a minute. `grass.setStir({ x, z, dx, dz })` is a
+stir of the air at a place, a club swung through: the grass within a
+stride is pushed out and along.
+
 A ball's lie in rough is how much of it stands above the grass: the grass
 holds it up. `thingMiddleFor(grassTall, radius, showing)` gives the height
 of its middle above the ground for a share `showing` of it to stand above
