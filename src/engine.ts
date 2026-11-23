@@ -1052,11 +1052,18 @@ export function createGrass(options: GrassOptions): Grass {
     }
     // Some leaves are dead: straw, the lighter for standing among green.
     const isDry = step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w).mul(float(1).sub(toGround)).mul(float(1).sub(flat));
-    const straw = vec3(1.6, 1.42, 0.62).mul(dot(colLit, vec3(0.3, 0.5, 0.2))).mul(mix(rootShade, float(1), gPos.y));
+    const straw = vec3(1.3, 1.36, 0.6).mul(dot(colLit, vec3(0.3, 0.5, 0.2))).mul(mix(rootShade, float(1), gPos.y));
     // A seed head is pale against its stalk.
     const head = smoothstep(float(0.42), float(0.82), gPos.y).mul(seed).mul(float(1).sub(toGround)).mul(float(1).sub(cutout));
     // (A tuft's blade stands for several leaves and is as much broader: its head is paled less, or the tufts are a pale band beyond the leaves.)
-    const sunlit = mix(mix(leafCol, straw, isDry), colLit.mul(vec3(seedTint.x, seedTint.y, seedTint.z)), head.mul(fine ? 0.85 : 0.4));
+    // A cut end dies back: a day or two after mowing the last couple of millimetres of a leaf are straw,
+    // the more of the leaves the more the mower tore them (`cutTip`). Only the end, and only on leaves the
+    // mower reached: the leaf below it is as green as it was.
+    const frayed = step(hashCell(hcell.add(b.mul(13.3).add(29.0))), row(k, 11).z).mul(mown).mul(step(cutAt, float(0.999)).add(isSquare).min(1));
+    // (The very end, and a little of it below: the leaf's own green gone yellow, not another colour laid on it.)
+    const cutEnd = isTip.add(isTopJoint.mul(0.3)).mul(frayed).mul(float(1).sub(toGround)).mul(float(1).sub(flat));
+    const cutCol = leafCol.mul(vec3(1.55, 1.32, 0.5)).mul(mix(float(0.9), float(1.15), rh));
+    const sunlit = mix(mix(mix(leafCol, cutCol, cutEnd.mul(0.85)), straw, isDry), colLit.mul(vec3(seedTint.x, seedTint.y, seedTint.z)), head.mul(fine ? 0.85 : 0.4));
     // The sun reaches its tip more than its root, by what stands between each and the sun (`sunReach`).
     // (A far tuft is lit root to tip as its top is, because the ground it gives way to is: a tuft with its
     // foot in its stand's shade is a dark blot on ground that stands for the whole stand in the sun.)

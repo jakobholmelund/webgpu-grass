@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b39";
+const LAB_BUILD = "b40";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -598,6 +598,7 @@ async function start() {
     picturePanel.add(s, "textureMode", { "its light and dark": "detail", "its colour": "color" }).name("it gives the leaf").onChange(changed);
     shownAs(picturePanel, s, "textureStrength", 100, 0, 100, "how much shows (%)").onChange(changed);
     picturePanel.add(s, "textureCutout").name("cut to its outline").onChange(changed);
+    shownAs(folder("Cut"), s, "cutTip", 100, 0, 100, "cut ends gone to straw (%)").onChange(changed);
     // Its edge: mown to a line, or left to run into its neighbour.
     const edgePanel = folder("Edge");
     shownAs(edgePanel, s, "edgeBlend", 100, 0, 200, "strays into it (cm): 0 is mown").onChange(changed);
