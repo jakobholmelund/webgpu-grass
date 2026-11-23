@@ -28,6 +28,8 @@ type Vec2 = THREE.Node<"vec2">;
 type Vec3 = THREE.Node<"vec3">;
 type Vec4 = THREE.Node<"vec4">;
 
+/** The top of a stand, as a share of its species' height: its plants stand from 0.78 to 1.08 of that. */
+const STAND_TOP = 0.93;
 /** How many things can lie in the grass at once (see `Grass.setThings`). */
 export const MAX_THINGS = 4;
 
@@ -41,11 +43,23 @@ export interface GrassThing {
   /** The grass is gone within this far (m) of its centre, growing back to full height a little beyond: a nest it has pressed. 0: none. */
   clear?: number;
   /**
-   * Keep it in sight: the leaves standing between the eye and it are kept under the line from
-   * the eye to its middle, so its top half shows and how deep it sits can be read off. Grass taller than
-   * a ball hides the ball altogether otherwise.
+   * Keep it in sight: the leaves standing between the eye and it are kept under a line from the eye to
+   * it, so that this share of its height shows from the top down (`true`: half, the line to its middle),
+   * and how deep it sits can be read off. Grass taller than a ball hides the ball altogether otherwise.
+   * To show a lie as it is, give the share of it that stands above the grass, or a little more.
    */
-  keepSeen?: boolean;
+  keepSeen?: boolean | number;
+}
+
+/**
+ * Where the middle of a ball goes (m above its ground) for `showing` of its height, 0..1, to stand above
+ * grass `grassTall` high: a ball in rough is held up by the grass, and its lie is how much of it shows.
+ * Never lower than resting on the ground. (The top of a stand is its plants' mean height, a little
+ * under the species' own: no two plants are the same height, so at any one place it is this give or take.)
+ */
+export function thingMiddleFor(grassTall: number, radius: number, showing: number): number {
+  const top = grassTall * STAND_TOP;
+  return Math.max(radius, top + (Math.min(1, Math.max(0, showing)) * 2 - 1) * radius);
 }
 
 /** One square of plants. */
@@ -408,16 +422,19 @@ export function createGrass(options: GrassOptions): Grass {
       const under = max(c.y.sub(pow(max(r.mul(r).sub(d.mul(d)), float(0)), float(0.5))).sub(gy).sub(0.002), float(0));
       t = mix(t, min(t, under), step(d, r).mul(there));
       // (Between the eye and it: under the line of sight to its middle, for most plants, in a lane a little wider than it is.)
-      const eye = vec3(uCamPos.x.sub(c.x), uCamPos.y.sub(c.y), uCamPos.z.sub(c.z));
+      // (To the height on it above which it is to show: its top less that share of its height.)
+      const share = thingHow[i].y;
+      const lineTo = c.y.add(r.mul(float(1).sub(share.mul(2))));
+      const eye = vec3(uCamPos.x.sub(c.x), uCamPos.y.sub(lineTo), uCamPos.z.sub(c.z));
       const eyeFlat = max(length(vec2(eye.x, eye.z)), float(1e-4));
       const dir = vec2(eye.x, eye.z).div(eyeFlat);
       const toward = dot(rel, dir);
       const aside = abs(rel.x.mul(dir.y).sub(rel.y.mul(dir.x)));
-      const sight = max(c.y.sub(gy).add(toward.mul(eye.y).div(eyeFlat)), float(0));
+      const sight = max(lineTo.sub(gy).add(toward.mul(eye.y).div(eyeFlat)), float(0));
       // (Every plant in the lane, each to somewhere under the line: at a sward's density one plant in ten
       // left standing is leaf enough to hide a ball. And a wider lane through taller grass, whose leaves hang in from the sides.)
       const laneWide = mix(float(THING_LANE), float(THING_LANE_TALL), smoothstep(float(0.06), float(0.15), tall));
-      const lane = float(1).sub(smoothstep(r.mul(laneWide).mul(0.8), r.mul(laneWide).mul(1.7), aside)).mul(step(float(0), toward)).mul(thingHow[i].y).mul(there);
+      const lane = float(1).sub(smoothstep(r.mul(laneWide).mul(0.8), r.mul(laneWide).mul(1.7), aside)).mul(step(float(0), toward)).mul(step(float(1e-4), share)).mul(there);
       t = mix(t, min(t, sight.mul(mix(float(0.6), float(1), luck))), lane);
     }
     return t;
@@ -1811,7 +1828,7 @@ export function createGrass(options: GrassOptions): Grass {
         const t = list[i];
         if (t) {
           thingAt[i].value.set(t.x, t.y, t.z, Math.max(0, t.radius));
-          thingHow[i].value.set(Math.max(0, t.clear ?? 0), t.keepSeen ? 1 : 0, 0, 0);
+          thingHow[i].value.set(Math.max(0, t.clear ?? 0), t.keepSeen === true ? 0.5 : Math.min(1, Math.max(0, t.keepSeen || 0)), 0, 0);
         } else {
           thingAt[i].value.set(0, -9999, 0, 0);
           thingHow[i].value.set(0, 0, 0, 0);

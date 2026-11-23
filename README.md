@@ -161,8 +161,17 @@ is pressed down beneath it, no leaf goes through it, and the leaves against
 it are held still in the wind. `clear` is a nest pressed round it. With
 `keepSeen` the leaves between the eye and the thing are kept under
 the line of sight to its middle, so its top half shows and how deep it sits
-can be read off: grass taller than a ball otherwise hides the ball. The
-thing itself is the host's to draw, and it casts no shadow on the grass yet.
+can be read off: grass taller than a ball otherwise hides the ball. Give
+`keepSeen` a share, 0 to 1, and that much of the thing shows from its top
+down (`true` is a half). The thing itself is the host's to draw, and it
+casts no shadow on the grass yet.
+
+A ball's lie in rough is how much of it stands above the grass: the grass
+holds it up. `thingMiddleFor(grassTall, radius, showing)` gives the height
+of its middle above the ground for a share `showing` of it to stand above
+grass that tall, taking the top of a stand as its plants' mean height. No
+two plants are the same height, so at any one place it is that give or
+take a few millimetres. The lab's "A ball in the grass" panel sets it.
 
 ## What it does not do yet
 

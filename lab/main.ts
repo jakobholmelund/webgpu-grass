@@ -13,7 +13,7 @@
 import * as THREE from "three/webgpu";
 import { dot, float, length, max, mix, normalWorld, normalize, positionGeometry, positionWorld, pow, smoothstep, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import GUI from "three/addons/libs/lil-gui.module.min.js";
-import { MAX_LEAF_TEXTURES, TURF_SPECIES, type Species, type SpecimenKind, checkSpecies, cloneSpecies, createGrass, heightAt, heightGrid, mowStripes, speciesMap } from "../src/index";
+import { MAX_LEAF_TEXTURES, TURF_SPECIES, type Species, type SpecimenKind, checkSpecies, cloneSpecies, createGrass, heightAt, heightGrid, mowStripes, speciesMap, thingMiddleFor } from "../src/index";
 import { LEAF_ART } from "./leafart";
 import { makeHeights, makeMap } from "./world";
 import { SCENES, type Scene } from "./scenes";
@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b54";
+const LAB_BUILD = "b55";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -91,7 +91,8 @@ async function start() {
   const plotAsked = query.get("plot");
   const field = { plot: plotAsked !== null && Number.isInteger(Number(plotAsked)) ? Number(plotAsked) : -1 };
   let species = cloneSpecies(TURF_SPECIES);
-  const map = speciesMap(makeMap(field.plot >= 0 ? field.plot : null, species.length));
+  let plotGrid = makeMap(field.plot >= 0 ? field.plot : null, species.length);
+  const map = speciesMap(plotGrid);
   // (Mown up and down the strip of turf, a little off its line, by a mower two and a half metres wide.)
   const mow = mowStripes({ width: 2.5, heading: 12 });
   const grass = createGrass({ height: heightGrid(heights), map, mow, species });
@@ -147,13 +148,21 @@ async function start() {
   ball.visible = false;
   let ballOn = false;
   scene.add(ball);
+  /** The ball as it is set: there or not, how far before the eye, how much of it stands above the grass, how much the grass before it is kept clear of. */
+  const ballSet = { on: false, ahead: 0.45, showing: 0.47, uncover: 0.55 };
+  const placeBall = () => {
+    ballOn = ballSet.on;
+    if (!ballSet.on) return grass.setThings([]);
+    const x = view.x - Math.sin(view.yaw) * ballSet.ahead;
+    const z = view.z - Math.cos(view.yaw) * ballSet.ahead;
+    const id = plotGrid.ids[Math.floor((z - plotGrid.z0) / plotGrid.cell) * plotGrid.nx + Math.floor((x - plotGrid.x0) / plotGrid.cell)];
+    const tall = species[id]?.height ?? 0;
+    ball.position.set(x, heightAt(heights, x, z) + thingMiddleFor(tall, BALL_RADIUS, ballSet.showing), z);
+    grass.setThings([{ x, y: ball.position.y, z, radius: BALL_RADIUS, keepSeen: ballSet.uncover }]);
+  };
   const setBall = (b: Scene["ball"] | null) => {
-    ballOn = !!b;
-    if (!b) return grass.setThings([]);
-    const x = view.x - Math.sin(view.yaw) * b.ahead;
-    const z = view.z - Math.cos(view.yaw) * b.ahead;
-    ball.position.set(x, heightAt(heights, x, z) + b.up, z);
-    grass.setThings([{ x, y: ball.position.y, z, radius: BALL_RADIUS, clear: b.clear, keepSeen: b.keepSeen }]);
+    Object.assign(ballSet, { on: !!b }, b ?? {});
+    placeBall();
   };
   // (A round of soil that pales away into the backdrop at its rim: nothing with an edge to look at but the grass.)
   const standMat = new THREE.MeshBasicNodeMaterial({ fog: false });
@@ -328,6 +337,11 @@ async function start() {
   shownAs(fieldPanel, grass.look, "edgeWobble", 100, 0, 60, "border wobble (cm)").onChange(save);
   shownAs(fieldPanel, grass.look, "groundShade", 100, 50, 110, "ground under it (%)").onChange(save);
   // How the plot was mown: it shows on the species the mower lays over (Species, Behaviour).
+  const ballPanel = sceneGui.addFolder("A ball in the grass");
+  ballPanel.add(ballSet, "on").name("a ball before the eye").onChange(placeBall);
+  shownAs(ballPanel, ballSet, "showing", 100, 0, 100, "its lie: showing above the grass (%)").onChange(placeBall);
+  shownAs(ballPanel, ballSet, "uncover", 100, 0, 100, "kept in sight from the eye (%)").onChange(placeBall);
+  shownAs(ballPanel, ballSet, "ahead", 100, 20, 300, "before the eye (cm)").onChange(placeBall);
   const mowPanel = sceneGui.addFolder("Mowing");
   mowPanel.add(grass.look, "mown").name("mown in stripes").onChange(save);
   mowPanel.add(mow, "width", 0.4, 6).name("pass width (m)").decimals(1);
@@ -404,7 +418,8 @@ async function start() {
   const tallLabel = (m: number) => (m < 0.02 ? `${(m * 1000).toFixed(1).replace(/\.0$/, "")} mm` : `${(m * 100).toFixed(0)} cm`);
   const setPlot = (row: number) => {
     field.plot = row;
-    map.set(makeMap(row >= 0 ? row : null, species.length).ids);
+    plotGrid = makeMap(row >= 0 ? row : null, species.length);
+    map.set(plotGrid.ids);
     el("fill").setAttribute("aria-pressed", String(row >= 0));
   };
   el("fill").addEventListener("click", () => setPlot(field.plot >= 0 ? -1 : chosen.row));
@@ -679,11 +694,11 @@ async function start() {
       grass.look.mown = true;
     }
     Object.assign(view, sc.view);
-    setBall(sc.ball ?? null);
     [light.sunAzimuth, light.sunElevation] = sc.sun;
     [light.windHeading, light.windSpeed] = sc.wind;
     chosen.row = Math.min(sc.row, species.length - 1);
     setPlot(sc.plot);
+    setBall(sc.ball ?? null);
     bench.show = sc.show ?? "The plot";
     Object.assign(bench, { yaw: 0.7, pitch: 0.22, zoom: 1 });
     setBench();
@@ -988,6 +1003,8 @@ async function start() {
     load,
     scenes: SCENES,
     setBall,
+    ballSet,
+    placeBall,
     applyScene,
     /** The picture as it is now, as a JPEG `wide` pixels across (3:2, cut from its middle). */
     shot(wide = 720) {

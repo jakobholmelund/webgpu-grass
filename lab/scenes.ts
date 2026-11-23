@@ -27,8 +27,8 @@ export interface Scene {
   /** Mown in stripes: the pass width (m) and its heading (degrees). */
   mow?: [number, number];
   style?: { broad: number; flat: number };
-  /** A golf ball in the grass, `ahead` metres in front of the eye, its middle `up` metres off the ground. */
-  ball?: { ahead: number; up: number; clear?: number; keepSeen?: boolean };
+  /** A golf ball in the grass, `ahead` metres in front of the eye: its lie (the share of it, 0..1, standing above the grass), and the share of it the grass before it is kept clear of. */
+  ball?: { ahead: number; showing: number; uncover: number };
   look?: Partial<{ clumpSize: number; macro: number; edgeWobble: number; groundShade: number; shadow: number; occlusion: number }>;
 }
 
@@ -134,12 +134,12 @@ export const SCENES: Scene[] = [
   {
     id: "ball-in-the-rough",
     title: "A ball in the rough",
-    blurb: "Something lying in the grass: the leaves under it are pressed down, none goes through it, those against it are held still, and a lane is kept open so you can see how it sits.",
+    blurb: "A ball with 47% of it showing: held up by the grass, the leaves under it pressed down, none through it, and a lane kept open so you can see how it sits. Its lie is on the right, under Scene.",
     species: turf(),
     plot: ROUGH, row: ROUGH,
     view: { x: 14, z: -6, eye: 0.22, yaw: -0.9, pitch: -0.4, fov: 36 },
     sun: [140, 40], wind: [90, 3.5],
-    ball: { ahead: 0.45, up: 0.03, keepSeen: true },
+    ball: { ahead: 0.45, showing: 0.47, uncover: 0.55 },
   },
   {
     id: "from-above",
