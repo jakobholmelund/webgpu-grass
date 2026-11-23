@@ -52,8 +52,22 @@ const SEEN_MARGIN = 0.85;
 export const MAX_TRAIL = 24;
 /** Two points of a trail further apart than this (m) are not joined. */
 const TRAIL_GAP_M = 1.8;
-/** Grass a thing went through is back up after this long (s), and at its lowest this share of its height. */
-const TRAIL_GONE_S = 16;
+/**
+ * Grass a thing went through is back up after this long (s): dry, in about a second (a ball is 46 g, and
+ * leaves it bent aside spring back as it leaves them; nothing is left to see); wet, a few seconds, a wet
+ * leaf being heavier and clinging to its neighbours. Estimates: nobody has timed it. At its lowest it is
+ * this share of its height.
+ */
+const TRAIL_UP_DRY_S = 1.1;
+const TRAIL_UP_WET_S = 3.5;
+/**
+ * What a thing going through wet grass leaves is not bent leaves but leaves with the water wiped off
+ * them: a darker line through grass that is pale with dew, there until the grass dries or is wet again.
+ * It is kept this long (s), fading over the last third, and at its darkest the leaves' colour times this
+ * (in grass wholly wet: `look.wet`).
+ */
+const TRAIL_WIPED_S = 240;
+const TRAIL_WIPED_TINT = 0.8;
 const TRAIL_TALL = 0.5;
 /** How far over the grass in a track is laid, the way the thing went (as a lean: 1 is nearly flat). */
 const TRAIL_LAY = 0.85;
@@ -387,6 +401,8 @@ export interface Grass {
    * left out, so the field keeps its cover: a host's own setting for a slower machine).
    * `brightest`: no leaf is drawn brighter than this (a host that blooms what is bright sets it
    * under its threshold, or a back-lit leaf is a lamp).
+   * `wet`: how wet the leaves are, 0 (dry) to 1 (dew, or rain): what a trail through them leaves
+   * (`setTrail`). The colour of wet grass is the host's to give (`world.tint`).
    * `site`: how far the grass's colour follows the lie of the ground, lusher in the hollows
    * and paler on the crowns (it needs the map's `bounds`; patches follow it by each species' `patchSite`).
    * `mown`: whether the field is mown in stripes at all (`GrassOptions.mow` says how): off, no
@@ -407,7 +423,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; amount: number; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; wet: number; amount: number; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -419,8 +435,11 @@ export interface Grass {
   /**
    * Where something has gone through the grass, in the order it went: at most `MAX_TRAIL` points, each a
    * place, how broad the thing was there (m) and when it was there (s, on `update`'s clock). The grass is
-   * crushed along the track between each point and the next and pushed out to its sides, and comes back
-   * up over a quarter of a minute. None, to clear it.
+   * laid over along the track between each point and the next as the thing passes, and is back up in
+   * about a second: dry grass keeps no track. Wet grass (`look.wet`) is slower up, and its leaves along
+   * the track are a little darker for some minutes, the wet wiped off them. (A faint line, and on the
+   * leaves only: a dew track as it is seen on a green, dark through pale, wants the dew drawn and the
+   * ground under the leaves to carry the line, and neither is done.) None, to clear it.
    */
   setTrail(points: readonly { x: number; z: number; radius: number; at: number }[]): void;
   /** A stir of the air at a place: the grass within a stride of it is pushed out from it and along (`dx`, `dz`: which way, and how hard, 1 being a club's swing). None, for still. */
@@ -549,15 +568,19 @@ export function createGrass(options: GrassOptions): Grass {
   // Where something has gone through the grass (x, z, how broad, when), in the order it went; and a stir of the air at a place (x, z, and which way and how hard).
   const trail = uniformArray(Array.from({ length: MAX_TRAIL }, () => new THREE.Vector4()), "vec4");
   const uTrailCount = uniform(0);
+  /** How wet the leaves are, 0 dry to 1 (`look.wet`). */
+  const uWet = uniform(0);
   const uStir = uniform(new THREE.Vector4());
   /**
    * What a plant rooted at `xz` has of the trail and the stir: which way it is pushed over (x, y), and
    * what is left of its height (z). Grass a thing went through is crushed along its track and pushed
    * out to either side, and comes back up over a quarter of a minute; a stir pushes it out and along.
    */
-  const pressedAt = (xz: Vec2): Vec3 => {
+  const pressedAt = (xz: Vec2): Vec4 => {
     const tall = float(1).toVar();
     const push = vec2(0, 0).toVar();
+    const wiped = float(0).toVar();
+    const upAfter = mix(float(TRAIL_UP_DRY_S), float(TRAIL_UP_WET_S), uWet);
     If(uTrailCount.greaterThan(1), () => {
       Loop({ start: int(0), end: int(uTrailCount.sub(1)), type: "int", condition: "<" }, ({ i }: { i: THREE.Node<"int"> }) => {
         const a = trail.element(i) as unknown as Vec4;
@@ -571,8 +594,9 @@ export function createGrass(options: GrassOptions): Grass {
         const off = xz.sub(from.add(along.mul(t)));
         const d = length(off);
         const r = max(b.z, float(0.038));
-        const live = step(float(0), age).mul(step(age, float(TRAIL_GONE_S))).mul(step(float(0.001), b.z)).mul(step(d, r.mul(2)));
-        const spring = float(1).sub(smoothstep(float(2), float(TRAIL_GONE_S), age)).mul(live);
+        const live = step(float(0), age).mul(step(age, float(TRAIL_WIPED_S))).mul(step(float(0.001), b.z)).mul(step(d, r.mul(2)));
+        const spring = float(1).sub(smoothstep(upAfter.mul(0.15), upAfter, age)).mul(live);
+        wiped.assign(max(wiped, float(1).sub(smoothstep(r.mul(0.7), r.mul(1.5), d)).mul(float(1).sub(smoothstep(float(TRAIL_WIPED_S * 0.67), float(TRAIL_WIPED_S), age))).mul(live)));
         const crush = float(1).sub(smoothstep(r.mul(0.25), r.mul(1.45), d)).mul(spring);
         const ring = float(1).sub(smoothstep(r.mul(0.35), r.mul(1.9), d)).mul(smoothstep(float(0.01), r.mul(0.45), d)).mul(spring);
         push.addAssign(off.div(max(d, float(1e-4))).mul(ring).mul(0.18));
@@ -589,7 +613,7 @@ export function createGrass(options: GrassOptions): Grass {
     const away = length(from);
     const out = normalize(from.div(max(away, float(1e-4))).add(way.div(max(hard, float(1e-4))).mul(1.15)));
     push.addAssign(out.mul(float(1).sub(smoothstep(float(0.05), float(STIR_REACH_M), away)).mul(min(hard, float(1.25))).mul(step(float(0.01), hard)).mul(0.25)));
-    return vec3(push.x, push.y, tall);
+    return vec4(push.x, push.y, tall, wiped.mul(uWet));
   };
   /** How tall a plant rooted at `xz` (its ground at `gy`) stands among the things in the grass: `tall`, less whatever they take. `luck` 0..1 is the plant's own. */
   const amongThings = (tall: THREE.Node<"float">, xz: Vec2, gy: THREE.Node<"float">, luck: THREE.Node<"float">): THREE.Node<"float"> => {
@@ -1764,7 +1788,7 @@ export function createGrass(options: GrassOptions): Grass {
 
         // (The tufts thin with distance, and those left are drawn broader.)
         const lodKeep = fine ? float(1) : step(r0, mix(float(1.0), float(0.45), smoothstep(float(18), float(38), dist)));
-        const pressed = fine ? pressedAt(xz) : vec3(0, 0, 1);
+        const pressed = fine ? pressedAt(xz) : vec4(0, 0, 1, 0);
         const tall = (fine ? amongThings(tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep), xz, gy, hashCell(hcell.add(57.3))) : tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep)).mul(pressed.z);
 
         // Gusts: wind does not arrive as even waves. A field of stronger and
@@ -1792,7 +1816,7 @@ export function createGrass(options: GrassOptions): Grass {
           .add(vec2(pressed.x, pressed.y));
 
         // (What of the sky it sees is worked out half way up it, and is in its colour; the sun at its root and at its tip go with it, for the leaf to shade between.)
-        const colLit = tone(xz, base).mul(siteTint(xz)).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
+        const colLit = tone(xz, base).mul(mix(float(1), float(TRAIL_WIPED_TINT), pressed.w)).mul(siteTint(xz)).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
         // (A fine leaf is broadened for the leaves the view thinned out about it, not for those its species never grows.)
         const broaden = clamp(float(1).div(pow(max(viewShare, float(0.1)), float(0.5))).sub(1), float(0), float(BROADEN_MAX));
         outState.assign(vec4(lean.x, lean.y, tall, gust.sub(0.5).mul(min(windTakes, float(1)))));
@@ -2072,7 +2096,7 @@ export function createGrass(options: GrassOptions): Grass {
   const style = { broad: 0, flat: 0 };
   let frame = 0;
   const stats = { plants: all.reduce((n, l) => n + l.total, 0), leaves: all.reduce((n, l) => n + l.leaves, 0), computed: 0 };
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, amount: 1, bare };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, wet: 0, amount: 1, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const shadowAt = new THREE.Vector3();
@@ -2170,6 +2194,7 @@ export function createGrass(options: GrassOptions): Grass {
       uMown.value = look.mown ? 1 : 0;
       uSite.value = look.site;
       uBrightest.value = look.brightest;
+      uWet.value = Math.min(1, Math.max(0, look.wet));
       uAmount.value = Math.min(1, Math.max(0.05, look.amount));
       uShade.value.set(look.shadow, look.occlusion);
       uDetail.value.set(look.fold, look.relief, look.leafPixels);

@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b64";
+const LAB_BUILD = "b65";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -355,6 +355,7 @@ async function start() {
   shownAs(ballPanel, ballSet, "showing", 100, 0, 100, "its lie: showing above the grass (%)").onChange(placeBall);
   shownAs(ballPanel, ballSet, "uncover", 100, 0, 100, "kept in sight from the eye (%)").onChange(placeBall);
   shownAs(ballPanel, ballSet, "ahead", 100, 20, 300, "before the eye (cm)").onChange(placeBall);
+  shownAs(ballPanel, grass.look, "wet", 100, 0, 100, "wet grass, for a trail through it (%)");
   const mowPanel = sceneGui.addFolder("Mowing");
   mowPanel.add(grass.look, "mown").name("mown in stripes").onChange(save);
   mowPanel.add(mow, "width", 0.4, 6).name("pass width (m)").decimals(1);

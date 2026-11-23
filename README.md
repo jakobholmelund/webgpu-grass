@@ -174,8 +174,11 @@ A thing with `flat: true` is not a sphere but a place something stands
 on, a foot: the grass there is pressed to a third of its height.
 
 `grass.setTrail(points)` is where something has gone through the grass: the
-grass is crushed along the track and pushed out to its sides, and comes
-back up over a quarter of a minute. `grass.setStir({ x, z, dx, dz })` is a
+grass is laid over along the track as the thing passes and is back up in
+about a second, since dry grass keeps no track. Wet grass (`look.wet`, 0 to
+1) is slower up and its leaves along the track are a little darker for some
+minutes: a faint line, on the leaves only. A dew track as a green shows it
+(dark through pale) is not drawn yet. `grass.setStir({ x, z, dx, dz })` is a
 stir of the air at a place, a club swung through: the grass within a
 stride is pushed out and along.
 
