@@ -18,7 +18,7 @@
 // only chooses which plants are drawn.
 
 import * as THREE from "three/webgpu";
-import { Fn, If, abs, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, distance, dot, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, If, abs, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, distance, dot, exp, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
 import { type HeightSource, type MapSource, type MowSource } from "./field";
 import { makeNoiseTexture } from "./noise";
 import { MAX_SPECIES, SPECIES_SLOTS, type Species, makeSpeciesTable, packSpecies } from "./species";
@@ -187,7 +187,10 @@ export interface Grass {
   /**
    * The field as a whole. `clumpSize`: metres between clump centres.
    * `macro`: how much the colour drifts over tens of metres. `edgeWobble`:
-   * how far (m) a border strays from the map's cells. `fold`: how far a near leaf is folded
+   * how far (m) a border strays from the map's cells. `depth`: how far a stand's
+   * roots are as dark as the light's fall through its leaves makes them (by its height, its
+   * density and the sun's height), over the species' own `rootShade` alone (0).
+   * `fold`: how far a near leaf is folded
    * along its rib, in its geometry (1: a shallow V; 0: flat). `relief`: how deep the ground's
    * picture is: how far what stands high in it moves over what lies low as the eye moves, and
    * how its slopes are lit by the sun (1: as deep as the pile was laid; 0: a flat picture). `leafPixels`: how wide in the
@@ -201,7 +204,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -290,6 +293,8 @@ export function createGrass(options: GrassOptions): Grass {
   const uEyeUp = uniform(1.5);
   /** shadow, occlusion. */
   const uShade = uniform(new THREE.Vector2(0.6, 0.45));
+  /** depth: how far the roots' shade follows the light's fall through the stand (0: the species' own `rootShade`). */
+  const uLight = uniform(0.5);
   /** fold, relief, leafPixels. */
   const uDetail = uniform(new THREE.Vector3(1, 1, 1));
   const bare = new THREE.Color("#8a7355");
@@ -433,6 +438,24 @@ export function createGrass(options: GrassOptions): Grass {
   /** What a leaf or the ground is lit by where the sun does not reach it: the sky's light alone. */
   const inShade = () => uShadeTint.div(mix(uShadeTint, uSunTint, 0.62));
 
+  /**
+   * How much of the light reaches a stand's roots, 0..1. Light falls off through leaves as exp(-K L)
+   * (Monsi and Saeki), L the leaf area passed on the way down. The stand's leaf area index is taken from
+   * its height (mown bluegrass was measured at 3.2 at 3.8 cm and 4.9 at 7.6 cm, a putting green at about
+   * 1: Lee et al. 2011) and its density; K is 0.5 for the sky's light and 0.5 / sin(sun's height) for the
+   * sun's (leaves at all angles: Campbell and Norman 1998), so a low sun leaves the roots darker. The
+   * species' own `rootShade` thickens or thins the stand about that, and `look.depth` sets how far this
+   * is followed over `rootShade` alone.
+   */
+  const rootDark = (k: THREE.Node<"int">): THREE.Node<"float"> => {
+    const stand = row(k, 0);
+    const own = row(k, 3).z;
+    const leafArea = min(float(6), stand.x.mul(60).add(0.75)).mul(clamp(stand.z, float(0.3), float(1.5))).mul(float(1.55).sub(own));
+    const sunK = float(0.5).div(max(uSun.y, float(0.15)));
+    const reaches = exp(leafArea.mul(sunK).negate()).mul(0.62).add(exp(leafArea.mul(-0.5)).mul(0.38));
+    return mix(own, clamp(reaches, float(0.06), float(1)), uLight);
+  };
+
   /** The share of a square's leaves that stand at `away` metres from the eye, 1 at the eye to 0 at its reach, level at both. */
   const leavesAt = (away: THREE.Node<"float">, range: number): THREE.Node<"float"> => {
     const q = clamp(away.div(range * LEAF_REACH), float(0), float(1));
@@ -484,7 +507,7 @@ export function createGrass(options: GrassOptions): Grass {
     // (Not as dark as the roots themselves: the ground's picture has the dark between the leaves in it.)
     // Between the leaves it is nearly as dark as their roots; standing in for them it is their mean, root
     // to tip (`STAND_MEAN`), which is what the last leaves and the far tufts turn to as they go.
-    const under = mix(mix(row(k, 3).z, float(1), 0.4), mix(row(k, 3).z, float(1), STAND_MEAN), far).mul(uLook.w);
+    const under = mix(mix(rootDark(k), float(1), 0.4), mix(rootDark(k), float(1), STAND_MEAN), far).mul(uLook.w);
     // A fine grain, for the leaves' tips where the eye is too far off for leaves: gone by a dozen strides.
     const grain = noise(xz.div(0.5)).b.sub(0.5).mul(0.1).mul(float(1).sub(smoothstep(float(3), float(14), distance(xz, vec2(uCamPos.x, uCamPos.z)))));
     // The ground's picture: what lies on it, as lighter and darker than the picture's own mean, so
@@ -702,7 +725,13 @@ export function createGrass(options: GrassOptions): Grass {
     const bladeTall = tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y)));
 
     // The leaf arches: upright at the root, bending over more and more towards the tip.
-    const lean2 = vec2(st.x, st.y).add(out2.mul(fine ? float(0.2).add(rb.mul(0.42)) : float(0.25).add(rb.mul(0.3))).mul(blade.z));
+    const lean0 = vec2(st.x, st.y).add(out2.mul(fine ? float(0.2).add(rb.mul(0.42)) : float(0.25).add(rb.mul(0.3))).mul(blade.z));
+    // No leaf is ever still, and none only leans: each swings in a small figure of eight of its own, the
+    // swing running up the leaf a little late towards its tip, more in a wind and less for a stiff grass.
+    // (Most of what is seen of a field moving is this, and the gusts over it the rest: Sanders, GDC 2018.)
+    const swingAt = uTime.mul(float(1.3).add(uWind.z.mul(0.22))).add(hashCell(hcell.add(b.mul(5.3).add(41.0))).mul(6.2832)).sub(gy.mul(1.4));
+    const swingBy = float(1).sub(row(k, 2).w.mul(0.75)).mul(float(0.014).add(min(uWind.z.div(8), float(1.5)).mul(0.034)));
+    const lean2 = o.spin ? lean0 : lean0.add(vec2(sin(swingAt), sin(swingAt.mul(2)).mul(0.5)).mul(swingBy));
     const bendPow = fine ? gy.mul(gy) : pow(gy, float(2.1));
     // The leaf bends over in an arc, and is as long bent as straight: it leans the way of `lean2`, and
     // from root to tip turns through an angle that grows with the lean (and with how far the species'
@@ -730,7 +759,8 @@ export function createGrass(options: GrassOptions): Grass {
     const tipTint = vec3(tint.x, tint.y, tint.z);
     const variation = habit.w.mul(float(1).sub(flat));
     const leafTone = float(1).sub(variation.mul(0.5)).add(rb.mul(variation));
-    const rootShade = mix(habit.z, float(1), flat.mul(0.7));
+    const rootIs = rootDark(k);
+    const rootShade = mix(rootIs, float(1), flat.mul(0.7));
     const V = normalize(cameraPosition.sub(worldPos));
     // Towards the end of their range the tufts take the ground's own flat
     // colour, root to tip, so where they stop there is nothing to see stop.
@@ -749,17 +779,28 @@ export function createGrass(options: GrassOptions): Grass {
       // And each leaf takes the light its own way (none of this where the style is calm):
       // the face it turns to the sun or from it, either side of it alike;
       // (Each half of a folded leaf faces its own way: turned about the leaf's length, in towards the rib.)
-      const face = o.folded ? normalize(faceAll.mul(cos(foldBy)).sub(side.mul(edge).mul(sin(foldBy)))) : faceAll;
+      const face = o.folded ? normalize(faceAll.mul(cos(foldBy)).sub(side.mul(edge).mul(sin(foldBy)))) : normalize(faceAll.add(side.mul(edge).mul(0.3)));
       // (And down in the fold less of the sky is seen than out at the edges: the deeper the fold, the darker its rib.)
       const inFold = float(1).sub(onRib.mul(sin(foldBy)).mul(0.45).mul(float(1).sub(calm)));
       const turned = mix(mix(float(0.8), float(1.18), abs(dot(face, uSun))), float(1), calm).mul(inFold);
       // its own green, a little to the yellow or to the blue of its neighbours';
       const own = vec3(1).add(vec3(0.16, 0.04, -0.2).mul(rh.sub(0.5)).mul(min(habit.w.mul(4), float(1))).mul(float(1).sub(calm)));
       // the sun through it, seen from the far side, strongest towards its tip;
-      const through = pow(max(dot(V.negate(), uSun), float(0)), float(2)).mul(float(1).sub(abs(dot(face, V)).mul(0.5))).mul(gPos.y).mul(float(1).sub(calm));
-      // and the sun off it, where its face lies between the sun and the eye.
-      const gloss = pow(abs(dot(face, normalize(uSun.add(V)))), float(28)).mul(sheenAmt).mul(gPos.y).mul(float(1).sub(calm));
-      leafCol = plain.mul(turned).mul(own).add(colLit.mul(vec3(1.3, 1.32, 0.5)).mul(through).mul(0.5)).add(uSunTint.mul(gloss).mul(0.1));
+      // (Through it: seen against the sun, bent a little by the leaf's own face, and tight about the sun's
+      // direction: Barre-Brisebois and Bouchard 2011. A leaf passes about as much green as it reflects and
+      // far less red and blue, so what comes through is yellower and deeper than the leaf's own colour.)
+      const through = pow(max(dot(V.negate(), normalize(uSun.add(face.mul(0.2)))), float(0)), float(4)).mul(float(1).sub(abs(dot(face, V)).mul(0.5))).mul(gPos.y).mul(float(1).sub(calm));
+      // and the sun off it, where its face lies between the sun and the eye. A leaf's shine is white, not
+      // its own colour, weak face on and strong at a glancing angle (Fresnel, for wax of index 1.5), and
+      // narrower along the leaf than across it (wheat leaves: roughness 0.18 along the veins, 0.46 across).
+      const halfway = normalize(uSun.add(V));
+      const offFace = max(abs(dot(face, halfway)), float(0.03));
+      const along = dot(runAll, halfway).div(0.18);
+      const across = dot(side, halfway).div(0.46);
+      const lobe = exp(along.mul(along).add(across.mul(across)).div(offFace.mul(offFace)).negate());
+      const glance = float(0.04).add(float(0.96).mul(pow(float(1).sub(max(dot(V, halfway), float(0))), float(5))));
+      const gloss = min(lobe.mul(glance).mul(1.6), float(0.6)).mul(sheenAmt).mul(gPos.y).mul(float(1).sub(calm));
+      leafCol = plain.mul(turned).mul(own).add(colLit.mul(vec3(0.95, 1.4, 0.3)).mul(through).mul(0.7)).add(vec3(1, 1, 1).mul(dot(uSunTint, vec3(0.3, 0.5, 0.2))).mul(gloss));
     } else {
       // (A tuft's foot is less dark than a leaf's root: tufts stand a hand apart, with nothing in front
       // to hide their feet as a sward's own leaves hide its roots, and a field of dark feet is a dark band
@@ -778,7 +819,7 @@ export function createGrass(options: GrassOptions): Grass {
       // (A gust shows as a paler patch crossing the grass: laid-over blades turn their backs to the sky.)
       const near = back.mul(fold).add(uSunTint.mul(sheen).mul(0.06)).add(back.mul(0.14).mul(gustHere.add(0.5)).mul(gPos.y));
       // (The ground a stand in seed gives way to is paler for its heads: see `groundColor`.)
-      leafCol = mix(near, colLit.mul(mix(habit.z, float(1), STAND_MEAN)).mul(mix(vec3(1), vec3(seedTint.x, seedTint.y, seedTint.z), seed.mul(0.35))), toGround);
+      leafCol = mix(near, colLit.mul(mix(rootIs, float(1), STAND_MEAN)).mul(mix(vec3(1), vec3(seedTint.x, seedTint.y, seedTint.z), seed.mul(0.35))), toGround);
     }
     // Some leaves are dead: straw, the lighter for standing among green.
     const isDry = step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w).mul(float(1).sub(toGround)).mul(float(1).sub(flat));
@@ -796,7 +837,7 @@ export function createGrass(options: GrassOptions): Grass {
     // its own turn to the sun is a pale fleck on that ground, and a band of them is where the leaves end.
     // (How many are left is in how much the leaf was broadened: see the compute pass.)
     const left = fine && o.field ? float(1).div(float(1).add(sh.y).mul(float(1).add(sh.y))) : float(1);
-    const asGround = colLit.mul(mix(habit.z, float(1), STAND_MEAN)).mul(mix(vec3(1), vec3(seedTint.x, seedTint.y, seedTint.z), seed.mul(0.35))).mul(mix(inShade(), vec3(1), mix(sh.z, sh.w, STAND_SUN)));
+    const asGround = colLit.mul(mix(rootIs, float(1), STAND_MEAN)).mul(mix(vec3(1), vec3(seedTint.x, seedTint.y, seedTint.z), seed.mul(0.35))).mul(mix(inShade(), vec3(1), mix(sh.z, sh.w, STAND_SUN)));
     const col = mix(asGround, own, smoothstep(float(0.16), float(0.6), left));
 
     // The picture on the leaf: across it and up it, its layer and how much of
@@ -1294,7 +1335,7 @@ export function createGrass(options: GrassOptions): Grass {
   repack();
   const style = { broad: 0, flat: 0 };
   let frame = 0;
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, bare };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const bufferSize = new THREE.Vector2();
@@ -1364,6 +1405,7 @@ export function createGrass(options: GrassOptions): Grass {
       uStripes.value = look.stripes;
       uShade.value.set(look.shadow, look.occlusion);
       uDetail.value.set(look.fold, look.relief, look.leafPixels);
+      uLight.value = look.depth;
       // (The canopy's picture, again every so often: a species may have grown, or the map been painted on.)
       if (canopyTarget && canopyQuad && frame++ % 20 === 0) {
         const before = renderer.getRenderTarget();

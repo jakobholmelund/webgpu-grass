@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b26";
+const LAB_BUILD = "b27";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -297,6 +297,7 @@ async function start() {
   lightPanel.add(light, "windSpeed", 0, 16, 0.1).name("wind (m/s)");
   shownAs(lightPanel, grass.look, "shadow", 100, 0, 100, "shade of taller grass (%)");
   shownAs(lightPanel, grass.look, "occlusion", 100, 0, 100, "sky hidden by it (%)");
+  shownAs(lightPanel, grass.look, "depth", 100, 0, 100, "light lost in the stand (%)");
   // What a close look is made of: each can be turned down to nothing to see what it adds.
   const detailPanel = sceneGui.addFolder("Detail");
   shownAs(detailPanel, grass.look, "fold", 100, 0, 250, "fold of near leaves (%)");
@@ -619,7 +620,7 @@ async function start() {
   refreshShow();
 
   // The gallery: ten scenes, each one press. A scene sets everything the lab has.
-  const LOOK_AS_MADE = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45 };
+  const LOOK_AS_MADE = { depth: 0.5, clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 0.16, shadow: 0.6, occlusion: 0.45 };
   const gallery = el<HTMLDialogElement>("gallery");
   const at = { scene: -1 };
   const refreshCaption = () => {
