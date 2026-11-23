@@ -18,7 +18,7 @@
 // only chooses which plants are drawn.
 
 import * as THREE from "three/webgpu";
-import { Fn, If, abs, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, distance, dot, exp, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, If, abs, asin, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, distance, dot, exp, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
 import { type HeightSource, type MapSource, type MowSource } from "./field";
 import { makeNoiseTexture } from "./noise";
 import { MAX_SPECIES, SPECIES_SLOTS, type Species, makeSpeciesTable, packSpecies } from "./species";
@@ -893,7 +893,12 @@ export function createGrass(options: GrassOptions): Grass {
         : leafWidth.mul(TUFT_BROAD).mul(mix(float(0.55), float(1), clamp(dist.div(uLeafReach), float(0), float(1)))).mul(float(1).add(dist.mul(0.09))).mul(mix(float(1.0), float(1.48), smoothstep(float(18), float(38), dist)));
     // No two leaves of a plant the same height.
     const rh = hashCell(hcell.add(b.mul(3.1).add(17.0)));
-    const bladeTall = tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y)));
+    // A mown leaf is not as long as the grass is tall: it grew to its own length, some well past the
+    // mower's height and some not up to it, and the mower took off whatever stood above. So it is drawn
+    // at its own length and only as far along as where it crosses that height (see `cutAt`): the stand
+    // has a level top of cut ends, with the shorter leaves' own tips below it.
+    const mown = max(isCut, isSquare);
+    const bladeTall = mix(tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y))), tall.mul(float(0.85).add(rh.mul(0.95))), mown);
 
     // The leaf arches: upright at the root, bending over more and more towards the tip.
     const lean0 = vec2(st.x, st.y).add(out2.mul(fine ? float(0.2).add(rb.mul(0.42)) : float(0.25).add(rb.mul(0.3))).mul(blade.z));
@@ -912,7 +917,9 @@ export function createGrass(options: GrassOptions): Grass {
     const leanBy = max(length(lean2), float(1e-4));
     const leanTo = lean2.div(leanBy);
     const bendAll = clamp(leanBy.mul(float(1.6).add(blade.w.mul(0.4))), float(1e-3), float(2.6));
-    const bendHere = bendAll.mul(gy);
+    // (How far along itself a mown leaf gets before the mower's height: it rises as sin(bend g) / bend of its length.)
+    const cutAt = mix(float(1), asin(clamp(tall.mul(bendAll).div(max(bladeTall, float(1e-5))), float(0), float(1))).div(bendAll), mown);
+    const bendHere = bendAll.mul(gy).mul(cutAt);
     const goesOut = float(1).sub(cos(bendHere)).div(bendAll);
     const goesUp = sin(bendHere).div(bendAll);
     const runAll = vec3(leanTo.x.mul(sin(bendHere)), cos(bendHere), leanTo.y.mul(sin(bendHere)));
@@ -953,7 +960,14 @@ export function createGrass(options: GrassOptions): Grass {
       const face = o.folded ? normalize(faceAll.mul(cos(foldBy)).sub(side.mul(edge).mul(sin(foldBy)))) : normalize(faceAll.add(side.mul(edge).mul(0.3)));
       // (And down in the fold less of the sky is seen than out at the edges: the deeper the fold, the darker its rib.)
       const inFold = float(1).sub(onRib.mul(sin(foldBy)).mul(0.45).mul(float(1).sub(calm)));
-      const turned = mix(mix(float(0.8), float(1.18), abs(dot(face, uSun))), float(1), calm).mul(inFold);
+      // And each leaf is in the sun or out of it: the sun gets down between the others to some depth, a
+      // different depth for every leaf, so each has its own line with sun above it and the others' shade
+      // below. (How often the sun reaches a height is the same fall through the stand as the roots' shade.)
+      const sunGetsTo = pow(max(rootIs, float(0.02)), float(1).sub(gPos.y));
+      const ownLuck = hashCell(hcell.add(b.mul(11.7).add(87.0)));
+      const inSun = smoothstep(ownLuck.mul(0.9).sub(0.06), ownLuck.mul(0.9).add(0.06), sunGetsTo);
+      const dapple = mix(float(1), mix(float(0.58), float(1.14), inSun), float(1).sub(calm).mul(uLight).mul(1.4).min(1));
+      const turned = mix(mix(float(0.8), float(1.18), abs(dot(face, uSun))), float(1), calm).mul(inFold).mul(dapple);
       // its own green, a little to the yellow or to the blue of its neighbours';
       const own = vec3(1).add(vec3(0.16, 0.04, -0.2).mul(rh.sub(0.5)).mul(min(habit.w.mul(4), float(1))).mul(float(1).sub(calm)));
       // the sun through it, seen from the far side, strongest towards its tip;

@@ -348,14 +348,15 @@ export const TURF_SPECIES: Species[] = [
     variation: 0.2, dry: 0.01, sheen: 1, lay: 0.85, groundTile: 0.5,
   }),
   turf("First cut (perennial rye)", 1, {
-    height: 0.032, heightSpread: 0.16, density: 1.2, width: 0.003, widthSpread: 0.001, tip: "cut",
-    splay: 0.9, droop: 0.9, twist: 0.8, stiffness: 0.95, disorder: 0.5, color: "#42903a", tipTint: [1.1, 1.09, 0.95], rootShade: 0.6,
-    variation: 0.2, dry: 0.015, sheen: 1, lay: 0.5, groundTile: 0.6,
+    height: 0.032, heightSpread: 0.16, density: 1.6, width: 0.0032, widthSpread: 0.001, tip: "cut",
+    splay: 0.6, droop: 0.5, twist: 0.8, stiffness: 0.95, disorder: 0.35, color: "#47963a", tipTint: [1.2, 1.17, 0.88], rootShade: 0.36,
+    variation: 0.3, dry: 0.015, sheen: 1, lay: 0.5, groundTile: 0.6,
   }),
+  // (Mown, as rough is on every course: a level top of cut ends, not a wild stand's own tips.)
   turf("Rough (rye and bluegrass)", 2, {
-    height: 0.064, heightSpread: 0.3, density: 1, width: 0.0032, widthSpread: 0.0012, tip: "point",
-    splay: 1, droop: 1.2, stiffness: 0.7, clump: 0.7, disorder: 0.9, color: "#4a9440", tipTint: [1.1, 1.1, 0.92], rootShade: 0.5,
-    variation: 0.22, dry: 0.02, sheen: 1,
+    height: 0.064, heightSpread: 0.3, density: 1.4, width: 0.0034, widthSpread: 0.0012, tip: "cut",
+    splay: 0.8, droop: 0.7, stiffness: 0.9, clump: 0.4, disorder: 0.5, color: "#4a9440", tipTint: [1.2, 1.17, 0.88], rootShade: 0.34,
+    variation: 0.3, dry: 0.02, sheen: 1,
     // (Something low and dark among it: clover, where nobody sprays.)
     patch: 0.08, patchSize: 0.66, patchTint: [0.72, 0.95, 0.72], patchTall: 0.7,
   }),
