@@ -318,10 +318,10 @@ const turf = (name: string, from: number, set: Partial<Species>): Species => ({ 
 export const TURF_SPECIES: Species[] = [
   turf("Creeping bent, green", 0, {
     height: 0.0035, heightSpread: 0.08, density: 2, width: 0.0009, widthSpread: 0.0003, tip: "cut",
-    splay: 0.25, droop: 0.2, stiffness: 1, disorder: 0.25, color: "#4c8a3a", tipTint: [1.06, 1.08, 0.94], rootShade: 0.74, variation: 0.24,
+    splay: 0.25, droop: 0.2, stiffness: 1, disorder: 0.25, color: "#538440", tipTint: [1.03, 1.04, 0.98], rootShade: 0.8, variation: 0.13,
     dry: 0.005, sheen: 0, lay: 1, groundTile: 0.35,
     // (Annual meadow-grass in it, as nearly every bent green has within a few years: brighter, not bluish.)
-    patch: 0.16, patchSize: 0.5, patchTint: [1.2, 1.22, 0.8], patchTall: 1.12,
+    patch: 0.16, patchSize: 0.5, patchTint: [1.08, 1.1, 0.9], patchTall: 1.06,
   }),
   turf("Perennial rye, fairway", 1, {
     height: 0.013, heightSpread: 0.12, density: 1.5, width: 0.0026, widthSpread: 0.001, tip: "cut",
