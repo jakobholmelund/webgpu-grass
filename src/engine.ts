@@ -133,6 +133,8 @@ const LEAF_IN_SHADE = 0.5;
 /** Grass shorter than the first (m) does not swing in the wind at all; grass as tall as the second swings freely. */
 const SWING_FROM_M = 0.045;
 const SWING_FULL_M = 0.11;
+/** A dead leaf: straw. */
+const STRAW = new THREE.Color("#b5a268");
 /** A leaf folded along its rib has each half turned this far (radians) from flat, at a `fold` of 1: a shallow V. */
 const FOLD_ANGLE = 0.5;
 /** A tuft's blade is this many times as broad as a fine leaf of its species: it stands for several. */
@@ -1052,7 +1054,11 @@ export function createGrass(options: GrassOptions): Grass {
     }
     // Some leaves are dead: straw, the lighter for standing among green.
     const isDry = step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w).mul(float(1).sub(toGround)).mul(float(1).sub(flat));
-    const straw = vec3(1.3, 1.36, 0.6).mul(dot(colLit, vec3(0.3, 0.5, 0.2))).mul(mix(rootShade, float(1), gPos.y));
+    // (Straw is its own colour, not the leaf's green gone grey: a grey leaf among green ones looks pink.
+    // It is lit as the leaf it was would be: by how bright that leaf is beside its species' own colour.)
+    const lum = vec3(0.3, 0.5, 0.2);
+    const lightOnIt = dot(colLit, lum).div(max(dot(vec3(baseCol.x, baseCol.y, baseCol.z), lum), float(1e-3)));
+    const straw = vec3(STRAW.r, STRAW.g, STRAW.b).mul(lightOnIt).mul(mix(rootShade, float(1), gPos.y));
     // A seed head is pale against its stalk.
     const head = smoothstep(float(0.42), float(0.82), gPos.y).mul(seed).mul(float(1).sub(toGround)).mul(float(1).sub(cutout));
     // (A tuft's blade stands for several leaves and is as much broader: its head is paled less, or the tufts are a pale band beyond the leaves.)
