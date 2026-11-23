@@ -320,7 +320,8 @@ const turf = (name: string, from: number, set: Partial<Species>): Species => ({ 
 
 /**
  * A golf course's surfaces, short to tall, as eight named stands: the green, its collar, the fairway, the
- * first cut, the rough, deep rough, and two that nobody mows. The heights are heights of cut in use (see
+ * first cut, the rough, deep rough, and two that nobody mows. (A mown grass's leaves are narrower than
+ * the same grass's left to grow: a rye leaf is 2 to 4 mm in the books and about 2 mm in a fairway.) The heights are heights of cut in use (see
  * the README for where each comes from); the leaf widths are the species' own, from turf references
  * (bent and fine fescue under a millimetre, rye 2 to 4). The colours and the habit were set by eye: a
  * likeness, not a measurement.
@@ -343,18 +344,18 @@ export const TURF_SPECIES: Species[] = [
     patchSite: -0.7, patch: 0.12, patchSize: 0.5, patchTint: [1.08, 1.1, 0.9], patchTall: 1.06,
   }),
   turf("Fairway (perennial rye)", 1, {
-    height: 0.011, heightSpread: 0.12, density: 1.5, width: 0.0026, widthSpread: 0.001, tip: "cut",
+    height: 0.011, heightSpread: 0.12, density: 1.5, width: 0.0018, widthSpread: 0.0006, tip: "cut",
     splay: 0.7, droop: 0.6, twist: 0.6, stiffness: 1, disorder: 0.35, color: "#3f8a35", tipTint: [1.1, 1.09, 0.98], rootShade: 0.68,
     variation: 0.2, dry: 0.01, sheen: 1, lay: 0.85, groundTile: 0.5,
   }),
   turf("First cut (perennial rye)", 1, {
-    height: 0.032, heightSpread: 0.16, density: 1.6, width: 0.0032, widthSpread: 0.001, tip: "cut",
+    height: 0.032, heightSpread: 0.16, density: 1.6, width: 0.002, widthSpread: 0.0007, tip: "cut",
     splay: 0.6, droop: 0.5, twist: 0.8, stiffness: 0.95, disorder: 0.35, color: "#47963a", tipTint: [1.2, 1.17, 0.88], rootShade: 0.36,
     variation: 0.3, dry: 0.015, sheen: 1, lay: 0.5, groundTile: 0.6,
   }),
   // (Mown, as rough is on every course: a level top of cut ends, not a wild stand's own tips.)
   turf("Rough (rye and bluegrass)", 2, {
-    height: 0.064, heightSpread: 0.3, density: 1.4, width: 0.0034, widthSpread: 0.0012, tip: "cut",
+    height: 0.064, heightSpread: 0.3, density: 1.4, width: 0.0024, widthSpread: 0.0008, tip: "cut",
     splay: 0.8, droop: 0.7, stiffness: 0.9, clump: 0.4, disorder: 0.5, color: "#4a9440", tipTint: [1.2, 1.17, 0.88], rootShade: 0.34,
     variation: 0.3, dry: 0.02, sheen: 1,
     // (Something low and dark among it: clover, where nobody sprays.)
@@ -374,12 +375,12 @@ export const TURF_SPECIES: Species[] = [
 /** Two more, for a host or a scene to put in a row of its own: a warm-season fairway and a lawn. */
 export const MORE_TURF: { bermuda: Species; bluegrass: Species } = {
   bermuda: turf("Fairway (bermuda)", 1, {
-    height: 0.011, heightSpread: 0.1, density: 1.8, width: 0.0017, widthSpread: 0.0005, tip: "point",
+    height: 0.011, heightSpread: 0.1, density: 1.8, width: 0.0013, widthSpread: 0.0004, tip: "point",
     splay: 0.9, droop: 0.3, twist: 0.3, stiffness: 1, disorder: 0.45, color: "#68a53f", tipTint: [1.1, 1.1, 0.9], rootShade: 0.62,
     variation: 0.26, dry: 0.03, sheen: 0.5, lay: 0.7, groundTile: 0.5,
   }),
   bluegrass: turf("Lawn (Kentucky bluegrass)", 2, {
-    height: 0.06, heightSpread: 0.2, density: 1.3, tufted: false, width: 0.003, widthSpread: 0.001, tip: "cut",
+    height: 0.06, heightSpread: 0.2, density: 1.3, tufted: false, width: 0.0024, widthSpread: 0.0008, tip: "cut",
     splay: 0.8, droop: 0.9, stiffness: 0.85, clump: 0.3, disorder: 0.6, color: "#39793d", tipTint: [1.08, 1.08, 0.96], rootShade: 0.55,
     variation: 0.18, dry: 0.01, sheen: 0.5, lay: 0.4,
     patch: 0.12, patchSize: 0.66, patchTint: [0.68, 0.94, 0.7], patchTall: 0.7,

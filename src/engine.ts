@@ -128,6 +128,8 @@ const SITE_NEAR_M = 2.5;
 const SITE_NEAR_RISE = 0.05;
 const SITE_FAR_M = 9;
 const SITE_FAR_DROP = 0.3;
+/** How bright a leaf (or the ground) in another leaf's shadow is beside one in the sun: it still has the sky, and the light through the leaves. */
+const LEAF_IN_SHADE = 0.5;
 /** A leaf folded along its rib has each half turned this far (radians) from flat, at a `fold` of 1: a shallow V. */
 const FOLD_ANGLE = 0.5;
 /** A tuft's blade is this many times as broad as a fine leaf of its species: it stands for several. */
@@ -198,7 +200,9 @@ export interface Grass {
   /**
    * The field as a whole. `clumpSize`: metres between clump centres.
    * `macro`: how much the colour drifts over tens of metres. `edgeWobble`:
-   * how far (m) a border strays from the map's cells. `site`: how far the grass's colour follows the lie of the ground, lusher in the hollows
+   * how far (m) a border strays from the map's cells. `leafShadows`: whether the leaves about the eye shadow each other and the ground (they are
+   * drawn once more each frame, from the sun: it costs about as much again as drawing them).
+   * `site`: how far the grass's colour follows the lie of the ground, lusher in the hollows
    * and paler on the crowns (it needs the map's `bounds`; patches follow it by each species' `patchSite`).
    * `mown`: whether the field is mown in stripes at all (`GrassOptions.mow` says how): off, no
    * leaf is laid over and there are no stripes. `depth`: how far a stand's
@@ -218,7 +222,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -286,6 +290,39 @@ export function createGrass(options: GrassOptions): Grass {
   const layers = options.layers ?? DEFAULT_LAYERS;
 
   const group = new THREE.Group();
+
+  // Leaves' shadows on each other: the leaves about the eye are drawn once more each frame, from the sun,
+  // into a picture of how far from the sun the nearest leaf is along each of its rays. A leaf, or the
+  // ground, is in shadow where it is further than that. (Two pictures, turn about: a frame reads the one
+  // the frame before drew, since a picture cannot be read while it is drawn into.)
+  const SHADOW_SIZE = 2048;
+  /** The ground the shadow's picture covers reaches this far (m) each way from where the eye looks: 3 mm to the pixel. */
+  const SHADOW_HALF_M = 2.4;
+  /** A leaf is not in its own shadow: what is this much (m) nearer the sun than it does not count. */
+  const SHADOW_BIAS_M = 0.006;
+  const SHADOW_DEEP_M = 60;
+  /** Only the squares of leaves that reach no further than this (m) are drawn into it: the two nearest. */
+  const SHADOW_NEAR_RANGE_M = 2;
+  const shadowTargets = [0, 1].map(() => {
+    const t = new THREE.RenderTarget(SHADOW_SIZE, SHADOW_SIZE, { depthBuffer: true });
+    t.depthTexture = new THREE.DepthTexture(SHADOW_SIZE, SHADOW_SIZE);
+    return t;
+  });
+  const shadowMats = [new THREE.Matrix4(), new THREE.Matrix4()];
+  const shadowNodes: THREE.TextureNode[] = [];
+  const uSunMat = uniform(new THREE.Matrix4());
+  const uShadowOn = uniform(0);
+  const sunCam = new THREE.OrthographicCamera(-SHADOW_HALF_M, SHADOW_HALF_M, SHADOW_HALF_M, -SHADOW_HALF_M, 0.1, SHADOW_DEEP_M);
+  /** Whether the sun reaches a point past the leaves about it (x: 1 it does, 0 it does not), and how far that is known (y: 0 outside the picture). */
+  const leafShadow = (at: Vec3): Vec2 => {
+    const clip = uSunMat.mul(vec4(at, 1));
+    const inPicture = vec2(clip.x.mul(0.5).add(0.5), clip.y.mul(-0.5).add(0.5));
+    const node = texture(shadowTargets[0].depthTexture!, inPicture).level(float(0));
+    shadowNodes.push(node as unknown as THREE.TextureNode);
+    const nearest = (node as unknown as Vec4).x;
+    const known = float(1).sub(smoothstep(float(0.8), float(0.98), max(abs(clip.x), abs(clip.y)))).mul(uShadowOn);
+    return vec2(step(clip.z.sub(SHADOW_BIAS_M / SHADOW_DEEP_M), nearest), known);
+  };
   const noiseTex = makeNoiseTexture();
   const table = makeSpeciesTable();
   const tableNode = uniformArray(table, "vec4");
@@ -727,7 +764,9 @@ export function createGrass(options: GrassOptions): Grass {
     const windTakes = min(smoothstep(float(0.075), float(0.17), row(k, 0).x).mul(float(1).sub(row(k, 2).w)).mul(1.4), float(1));
     const blown = float(1).add(gustIs.sub(0.5).mul(windTakes).mul(clamp(uWind.z.div(8.0), float(0), float(1.7))).mul(far).mul(GUST_PALE));
     // (Bare ground is shaded as grown ground is: a path beside tall grass lies in its shadow.)
-    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
+    const onGround = leafShadow(positionWorld);
+    const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), onGround.x), onGround.y);
+    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
   };
 
   const geometries: THREE.BufferGeometry[] = [];
@@ -966,7 +1005,8 @@ export function createGrass(options: GrassOptions): Grass {
       const sunGetsTo = pow(max(rootIs, float(0.02)), float(1).sub(gPos.y));
       const ownLuck = hashCell(hcell.add(b.mul(11.7).add(87.0)));
       const inSun = smoothstep(ownLuck.mul(0.9).sub(0.06), ownLuck.mul(0.9).add(0.06), sunGetsTo);
-      const dapple = mix(float(1), mix(float(0.58), float(1.14), inSun), float(1).sub(calm).mul(uLight).mul(1.4).min(1));
+      const shadowed = o.field ? leafShadow(worldPos) : vec2(1, 0);
+      const dapple = mix(mix(float(1), mix(float(0.58), float(1.14), inSun), float(1).sub(calm).mul(uLight).mul(1.4).min(1)), mix(float(LEAF_IN_SHADE), float(1.1), shadowed.x), shadowed.y);
       const turned = mix(mix(float(0.8), float(1.18), abs(dot(face, uSun))), float(1), calm).mul(inFold).mul(dapple);
       // its own green, a little to the yellow or to the blue of its neighbours';
       const own = vec3(1).add(vec3(0.16, 0.04, -0.2).mul(rh.sub(0.5)).mul(min(habit.w.mul(4), float(1))).mul(float(1).sub(calm)));
@@ -1008,7 +1048,7 @@ export function createGrass(options: GrassOptions): Grass {
     }
     // Some leaves are dead: straw, the lighter for standing among green.
     const isDry = step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w).mul(float(1).sub(toGround)).mul(float(1).sub(flat));
-    const straw = vec3(1.22, 1.38, 0.6).mul(dot(colLit, vec3(0.3, 0.5, 0.2))).mul(mix(rootShade, float(1), gPos.y));
+    const straw = vec3(1.6, 1.42, 0.62).mul(dot(colLit, vec3(0.3, 0.5, 0.2))).mul(mix(rootShade, float(1), gPos.y));
     // A seed head is pale against its stalk.
     const head = smoothstep(float(0.42), float(0.82), gPos.y).mul(seed).mul(float(1).sub(toGround)).mul(float(1).sub(cutout));
     // (A tuft's blade stands for several leaves and is as much broader: its head is paled less, or the tufts are a pale band beyond the leaves.)
@@ -1523,9 +1563,12 @@ export function createGrass(options: GrassOptions): Grass {
   repack();
   const style = { broad: 0, flat: 0 };
   let frame = 0;
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, bare };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
+  const shadowAt = new THREE.Vector3();
+  let shadowTurn = 0;
+  let shadowSkip = 0;
   const bufferSize = new THREE.Vector2();
 
   return {
@@ -1628,6 +1671,33 @@ export function createGrass(options: GrassOptions): Grass {
       for (const l of all) l.mesh.visible = l.fine ? shown.leaves && l.uGate.value > 0 : shown.tufts;
       const passes = all.filter((l) => l.mesh.visible).flatMap((l) => [l.reset, l.compute]);
       if (passes.length > 0) renderer.compute(passes);
+      // The leaves' shadows: the squares nearest the eye, drawn from the sun.
+      if (look.leafShadows && shown.leaves && uSun.value.y > 0.05 && shadowSkip++ % 2 === 1) {
+        // (A frame that draws none keeps the one before: leaves move little in a sixtieth of a second.)
+      } else if (look.leafShadows && shown.leaves && uSun.value.y > 0.05) {
+        const write = shadowTurn % 2;
+        const read = 1 - write;
+        for (const n of shadowNodes) n.value = shadowTargets[read].depthTexture!;
+        uSunMat.value.copy(shadowMats[read]);
+        uShadowOn.value = shadowTurn > 0 ? 1 : 0;
+        shadowAt.set(eye.x + f.x * SHADOW_HALF_M * 0.7, eye.y - uEyeUp.value, eye.z + f.y * SHADOW_HALF_M * 0.7);
+        sunCam.position.copy(shadowAt).addScaledVector(uSun.value, SHADOW_DEEP_M * 0.5);
+        sunCam.up.set(0, uSun.value.y > 0.95 ? 0 : 1, uSun.value.y > 0.95 ? 1 : 0);
+        sunCam.lookAt(shadowAt);
+        sunCam.updateMatrixWorld();
+        const were = all.map((l) => l.mesh.visible);
+        for (const l of all) l.mesh.visible = l.mesh.visible && l.fine && l.range < SHADOW_NEAR_RANGE_M;
+        const before = renderer.getRenderTarget();
+        renderer.setRenderTarget(shadowTargets[write]);
+        renderer.render(group, sunCam);
+        renderer.setRenderTarget(before);
+        all.forEach((l, i) => (l.mesh.visible = were[i]));
+        shadowMats[write].multiplyMatrices(sunCam.projectionMatrix, sunCam.matrixWorldInverse);
+        shadowTurn++;
+      } else {
+        uShadowOn.value = 0;
+        shadowTurn = 0;
+      }
     },
     show: shown,
     groundColor,

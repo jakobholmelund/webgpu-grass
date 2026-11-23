@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b36";
+const LAB_BUILD = "b38";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -298,6 +298,7 @@ async function start() {
   shownAs(lightPanel, grass.look, "shadow", 100, 0, 100, "shade of taller grass (%)");
   shownAs(lightPanel, grass.look, "occlusion", 100, 0, 100, "sky hidden by it (%)");
   shownAs(lightPanel, grass.look, "depth", 100, 0, 100, "light lost in the stand (%)");
+  lightPanel.add(grass.look, "leafShadows").name("leaves shadow each other");
   // What a close look is made of: each can be turned down to nothing to see what it adds.
   const detailPanel = sceneGui.addFolder("Detail");
   shownAs(detailPanel, grass.look, "fold", 100, 0, 250, "fold of near leaves (%)");
