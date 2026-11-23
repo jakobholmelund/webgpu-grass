@@ -149,8 +149,9 @@ is a separate mower at a fixed height, so its edges are steps
   as much green, nearly as much red and almost no blue, and the light
   through the leaves is tinted so. The chlorophyll per square centimetre
   is an estimate for each grass (38 to 60 ug): no source gives it species
-  against species, and a leaf's wax, which greys fescue and bluegrass, is
-  not in the model.
+  against species. A leaf's wax, which greys fescue and bluegrass, is not
+  in the model: it is added as a little more light sent back, most of it
+  blue, by estimate.
 
 ## What it does not do yet
 

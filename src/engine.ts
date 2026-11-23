@@ -133,8 +133,10 @@ const LEAF_IN_SHADE = 0.5;
 /** Grass shorter than the first (m) does not swing in the wind at all; grass as tall as the second swings freely. */
 const SWING_FROM_M = 0.045;
 const SWING_FULL_M = 0.11;
+/** How long a dead leaf is beside a live one of the same plant. */
+const DEAD_LEAF_TALL = 0.62;
 /** A dead leaf: straw. */
-const STRAW = new THREE.Color("#b5a268");
+const STRAW = new THREE.Color("#b9ac80");
 /** A leaf folded along its rib has each half turned this far (radians) from flat, at a `fold` of 1: a shallow V. */
 const FOLD_ANGLE = 0.5;
 /** A tuft's blade is this many times as broad as a fine leaf of its species: it stands for several. */
@@ -309,6 +311,8 @@ export function createGrass(options: GrassOptions): Grass {
   const SHADOW_PIXELS_APART = 1.5;
   /** A stand's leaves shadow each other by the picture in full once the stand is this many of its pixels tall, measured along the ground under the sun; at one, not at all. */
   const SHADOW_PIXELS_TALL = 3;
+  /** A stand's own leaves reach this many times its height above a point in it, at most (a tall leaf, ground rising a little towards the sun): what shadows it from further up the sun's ray than that is something taller. A golf course's surfaces step up by two or three times each, so this is well under two. */
+  const SHADOW_OWN_REACH = 1.6;
   const SHADOW_DEEP_M = 60;
   /** Only the squares of leaves that reach no further than this (m) are drawn into it: the two nearest. */
   const SHADOW_NEAR_RANGE_M = 2;
@@ -322,8 +326,12 @@ export function createGrass(options: GrassOptions): Grass {
   const uSunMat = uniform(new THREE.Matrix4());
   const uShadowOn = uniform(0);
   const sunCam = new THREE.OrthographicCamera(-SHADOW_HALF_M, SHADOW_HALF_M, SHADOW_HALF_M, -SHADOW_HALF_M, 0.1, SHADOW_DEEP_M);
-  /** Whether the sun reaches a point past the leaves about it (x: 1 it does, 0 it does not), and how far that is known (y: 0 outside the picture). */
-  const leafShadow = (at: Vec3, stands: THREE.Node<"float">): Vec2 => {
+  /**
+   * Whether the sun reaches a point past the leaves about it (x: 1 it does, 0 it does not), how far that
+   * is known (y: 0 outside the picture), how far the picture can tell the leaves of a stand `stands` tall
+   * apart (z), and whether the sun reaches the point past everything taller than that stand (w).
+   */
+  const leafShadow = (at: Vec3, stands: THREE.Node<"float">): Vec4 => {
     const clip = uSunMat.mul(vec4(at, 1));
     const inPicture = vec2(clip.x.mul(0.5).add(0.5), clip.y.mul(-0.5).add(0.5));
     const node = texture(shadowTargets[0].depthTexture!, inPicture).level(float(0));
@@ -338,7 +346,10 @@ export function createGrass(options: GrassOptions): Grass {
     // (And a stand no taller than that reach is leaves the picture cannot tell apart at all: there the
     // picture says nothing, and each leaf is in the sun or out of it by how deep in the stand it is.)
     const toldApart = smoothstep(float(1), float(SHADOW_PIXELS_TALL), stands.div(along.mul(2 * SHADOW_HALF_M / SHADOW_SIZE)));
-    return vec2(step(clip.z.sub(apart.div(SHADOW_DEEP_M)), nearest), known.mul(toldApart));
+    // (What such a stand still takes from the picture is the shadow of anything taller beside it: whatever
+    // is further up the sun's ray than the stand's own leaves could be.)
+    const ownReach = stands.mul(SHADOW_OWN_REACH).div(max(uSun.y, float(0.05)));
+    return vec4(step(clip.z.sub(apart.div(SHADOW_DEEP_M)), nearest), known, toldApart, step(clip.z.sub(apart.add(ownReach).div(SHADOW_DEEP_M)), nearest));
   };
   const noiseTex = makeNoiseTexture();
   const table = makeSpeciesTable();
@@ -780,10 +791,15 @@ export function createGrass(options: GrassOptions): Grass {
     const gustIs = smoothstep(float(0.3), float(0.72), noise(gustAt.div(61.0)).r.mul(0.68).add(noise(gustAt.mul(1.35).div(19.0).add(0.43)).g.mul(0.32)));
     const windTakes = min(smoothstep(float(0.075), float(0.17), row(k, 0).x).mul(float(1).sub(row(k, 2).w)).mul(1.4), float(1));
     const blown = float(1).add(gustIs.sub(0.5).mul(windTakes).mul(clamp(uWind.z.div(8.0), float(0), float(1.7))).mul(far).mul(GUST_PALE));
+    // (Looking towards the sun the leaves glow with the light through them, and the ground that stands
+    // for them further off glows as they do, or a dull band lies where the leaves stop: a leaf's glow,
+    // averaged over its length and the ways it faces.)
+    const fromEye = normalize(vec3(xz.x.sub(uCamPos.x), max(uEyeUp, float(0.02)).negate(), xz.y.sub(uCamPos.z)));
+    const glow = vec3(1).add(vec3(1.25, 1.4, 0.05).mul(pow(max(dot(fromEye, uSun), float(0)), float(4)).mul(0.26).mul(far).mul(smoothstep(float(0.02), float(0.1), row(k, 0).x))));
     // (Bare ground is shaded as grown ground is: a path beside tall grass lies in its shadow.)
     const onGround = leafShadow(positionWorld, row(k, 0).x);
-    const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), onGround.x), onGround.y);
-    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
+    const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), mix(onGround.w, onGround.x, onGround.z)), onGround.y);
+    return mix(uBare, tone(xz, vec3(base.x, base.y, base.z)).mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow), alive).mul(mix(inShade(), vec3(1), sunReach(xz, standsFor))).mul(skyOpen(xz, standsFor));
   };
 
   const geometries: THREE.BufferGeometry[] = [];
@@ -794,7 +810,10 @@ export function createGrass(options: GrassOptions): Grass {
   // height] at each joint, then the tip. Enough joints for it to bend over in
   // a curve (a fine leaf in a field is a few pixels wide: three carry it).
   const FINE_RINGS: [number, number][] = [[0.6, 0], [1, 0.34], [0.9, 0.76]];
-  const TUFT_RINGS: [number, number][] = [[0.62, 0], [1, 0.28], [0.95, 0.55], [0.74, 0.8]];
+  // (A tuft's blade stands for several leaves, and is broad for it: but broad low down, where the leaves
+  // it stands for are a mass, and drawn out fine above, where they are single tips. Broad to its top it
+  // is an agave on a skyline.)
+  const TUFT_RINGS: [number, number][] = [[0.62, 0], [1, 0.24], [0.66, 0.5], [0.3, 0.78]];
   /** The same outline with `joints` joints, for a leaf seen close: a specimen. */
   const fineRings = (rings: [number, number][], joints: number): [number, number][] => {
     const top = rings[rings.length - 1][1];
@@ -928,7 +947,11 @@ export function createGrass(options: GrassOptions): Grass {
     const shapedX = mix(mix(gPos.x, mix(gPos.x, cutSide.mul(TOP_HALF_WIDTH), isTip), isCut), squareX, isSquare).mul(seedHead);
     // (A cut-out leaf is a plain strip, its outline left to its picture.)
     const leafX = mix(shapedX, edge.mul(float(1).sub(onRib)), cutout);
-    const gy = mix(mix(gPos.y, mix(gPos.y, mix(float(0.86), float(0.88), isSquare), isTopJoint), isCut), gPos.y, cutout);
+    // (The slant is the mower's tear across the leaf: about as high as the leaf is broad, some nearly
+    // square and some well aslant, whatever the leaf's length. As a share of a long leaf that is very
+    // little: a cut leaf is a strap with an end, not a spear.)
+    const tear = clamp(row(k, 1).x.mul(mix(float(0.25), float(1.1), hashCell(hcell.add(b.mul(9.7).add(53.0))))).div(max(tall, float(1e-4))), float(0.006), float(0.14));
+    const gy = mix(mix(gPos.y, mix(gPos.y, mix(float(1).sub(tear), float(0.88), isSquare), isTopJoint), isCut), gPos.y, cutout);
     // A leaf does not turn to face whoever looks at it. Each is turned its
     // own way, up to some 60 degrees from square-on, and twists a little up
     // its length, so some are seen broad and some nearly edge-on.
@@ -954,7 +977,9 @@ export function createGrass(options: GrassOptions): Grass {
     // at its own length and only as far along as where it crosses that height (see `cutAt`): the stand
     // has a level top of cut ends, with the shorter leaves' own tips below it.
     const mown = max(isCut, isSquare);
-    const bladeTall = mix(tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y))), tall.mul(float(0.85).add(rh.mul(0.95))), mown);
+    // (A dead leaf is an old one: the plant's lowest, down in the stand under the live ones, not up among their tips.)
+    const oldLeaf = mix(float(1), float(DEAD_LEAF_TALL), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w));
+    const bladeTall = mix(tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y))), tall.mul(float(0.85).add(rh.mul(0.95))), mown).mul(oldLeaf);
 
     // The leaf arches: upright at the root, bending over more and more towards the tip.
     const lean0 = vec2(st.x, st.y).add(out2.mul(fine ? float(0.2).add(rb.mul(0.42)) : float(0.25).add(rb.mul(0.3))).mul(blade.z));
@@ -1023,8 +1048,9 @@ export function createGrass(options: GrassOptions): Grass {
       const sunGetsTo = pow(max(rootIs, float(0.02)), float(1).sub(gPos.y));
       const ownLuck = hashCell(hcell.add(b.mul(11.7).add(87.0)));
       const inSun = smoothstep(ownLuck.mul(0.9).sub(0.06), ownLuck.mul(0.9).add(0.06), sunGetsTo);
-      const shadowed = o.field ? leafShadow(worldPos, tall) : vec2(1, 0);
-      const dapple = mix(mix(float(1), mix(float(0.58), float(1.14), inSun), float(1).sub(calm).mul(uLight).mul(1.4).min(1)), mix(float(LEAF_IN_SHADE), float(1.1), shadowed.x), shadowed.y);
+      const shadowed = o.field ? leafShadow(worldPos, max(tall, stand.x)) : vec4(1, 0, 1, 1);
+      const byDepth = mix(float(1), mix(float(0.58), float(1.14), inSun), float(1).sub(calm).mul(uLight).mul(1.4).min(1));
+      const dapple = mix(byDepth, mix(byDepth.mul(mix(float(LEAF_IN_SHADE), float(1), shadowed.w)), mix(float(LEAF_IN_SHADE), float(1.1), shadowed.x), shadowed.z), shadowed.y);
       const turned = mix(mix(float(0.8), float(1.18), abs(dot(face, uSun))), float(1), calm).mul(inFold).mul(dapple);
       // its own green, a little to the yellow or to the blue of its neighbours';
       const own = vec3(1).add(vec3(0.16, 0.04, -0.2).mul(rh.sub(0.5)).mul(min(habit.w.mul(4), float(1))).mul(float(1).sub(calm)));

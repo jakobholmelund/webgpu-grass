@@ -339,7 +339,9 @@ const turf = (name: string, from: number, set: Partial<Species>): Species => ({ 
  * from grass to grass is the chlorophyll in a square centimetre of leaf, and those figures are
  * estimates, since nobody has published them species against species: bent 38 to 40 ug, rye 50 to 55,
  * Kentucky bluegrass 60, bermuda 45, red fescue 42, a hay meadow 34, fescue gone to seed 24 with brown
- * pigment in it, and annual meadow-grass 34 against the bent's 38 (the patches' tint).
+ * pigment in it, and annual meadow-grass 34 against the bent's 38 (the patches' tint). Fescue and Kentucky bluegrass
+ * carry a wax bloom the leaf model has none of: it sends back a little more of everything and most
+ * of the blue (1 to 2.5 parts in a hundred, an estimate), which is their grey-blue cast.
  *
  * The mown ones have mown edges (`edgeBlend` 0); deep rough, fescue and meadow run into their neighbours.
  * In the order of the lab's plot.
@@ -378,11 +380,11 @@ export const TURF_SPECIES: Species[] = [
   }),
   turf("Deep rough (red fescue)", 3, { twist: 0.6,
     height: 0.125, heightSpread: 0.5, density: 1.4, width: 0.0009, widthSpread: 0.0004, tip: "point",
-    splay: 1.2, droop: 1.6, stiffness: 0.25, clump: 1, disorder: 1, color: "#70944b", tipTint: [1.12, 1.12, 0.88], rootShade: 0.5,
+    splay: 1.2, droop: 1.6, stiffness: 0.25, clump: 1, disorder: 1, color: "#789b64", tipTint: [1.12, 1.12, 0.88], rootShade: 0.5,
     variation: 0.24, dry: 0.05, sheen: 0.5, edgeBlend: 0.4,
   }),
   turf("Fescue in seed", 4, {
-    height: 0.3, heightSpread: 0.8, color: "#8d9e4d", tipTint: [1.08, 1.08, 0.94], seedTint: [1.42, 1.38, 1.02], dry: 0.2, density: 0.38, edgeBlend: 1,
+    height: 0.3, heightSpread: 0.8, color: "#94a565", tipTint: [1.08, 1.08, 0.94], seedTint: [1.42, 1.38, 1.02], dry: 0.2, density: 0.38, edgeBlend: 1,
   }),
   turf("Hay meadow", 5, { height: 0.6, edgeBlend: 1.2, color: "#76954b" }),
 ];
@@ -396,7 +398,7 @@ export const MORE_TURF: { bermuda: Species; bluegrass: Species } = {
   }),
   bluegrass: turf("Lawn (Kentucky bluegrass)", 2, { cutTip: 0.55,
     height: 0.06, heightSpread: 0.2, density: 1.3, tufted: false, width: 0.0024, widthSpread: 0.0008, tip: "cut",
-    splay: 0.8, droop: 0.9, stiffness: 0.85, clump: 0.3, disorder: 0.6, color: "#5b794f", tipTint: [1.08, 1.08, 0.96], rootShade: 0.55,
+    splay: 0.8, droop: 0.9, stiffness: 0.85, clump: 0.3, disorder: 0.6, color: "#628061", tipTint: [1.08, 1.08, 0.96], rootShade: 0.55,
     variation: 0.18, dry: 0.01, sheen: 0.5, lay: 0.4,
     patch: 0.12, patchSize: 0.66, patchTint: [0.68, 0.94, 0.7], patchTall: 0.7,
   }),

@@ -60,11 +60,11 @@ export const SCENES: Scene[] = [
   {
     id: "the-collar",
     title: "The collar",
-    blurb: "Green, collar, fairway: three heights of cut, each mown to a line. The steps are a few millimetres and the mower made them.",
+    blurb: "Green, collar, fairway, running away to the right: three heights of cut, each mown to a line, under a low sun that shows the steps. They are a few millimetres and the mower made them.",
     species: turf(),
     plot: -1, row: COLLAR,
-    view: { x: 3.6, z: 1, eye: 0.16, yaw: TO_MEADOW + 0.25, pitch: -0.1, fov: 46 },
-    sun: [150, 34], wind: [70, 2],
+    view: { x: 3.4, z: 1, eye: 0.4, yaw: TO_MEADOW + 0.75, pitch: -0.2, fov: 46 },
+    sun: [20, 16], wind: [70, 2],
   },
   {
     id: "striped-fairway",
