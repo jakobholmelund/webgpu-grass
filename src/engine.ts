@@ -1621,10 +1621,11 @@ export function createGrass(options: GrassOptions): Grass {
     const onGround = forHost ? vec4(1, 0, 1, 1) : leafShadow(positionWorld, row(k, 0).x, row(k, 1).x);
     const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), mix(onGround.w, onGround.x, onGround.z)), onGround.y);
     // What the stand does to the ground's colour, apart from what colour that is.
-    // (And the ground's own colour there, which the stand says: sand, peat, mud. `Species.soil`. Only where it
-    // is the ground between the leaves: where it stands in for the leaves, far off, it is their colour, or a
-    // meadow a hundred metres off was the colour of its mud.)
-    const soil = mix(row(k, 19).xyz, vec3(1), far);
+    // (And the ground's own colour there, which the stand says: sand, peat, mud. `Species.soil`. Not far off,
+    // where the ground stands in for the stand seen from there, or a meadow a hundred metres off was the colour
+    // of its mud. By distance only: a thin stand's ground stands in for its few leaves near the eye too, and
+    // that is just where its soil shows.)
+    const soil = mix(row(k, 19).xyz, vec3(1), farOff);
     const stand = soil.mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k, m.edge)).mul(strainTint(xz, k)).mul(scorchTint(xz, k, m.edge)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow);
     // (For a host with its own ground: that alone, with the grass's own shade and none of the world's, which is the host's to put on its ground itself.)
     // (As a share of the stand's own mean: the host's colour is the stand's as a whole, so far off, where the

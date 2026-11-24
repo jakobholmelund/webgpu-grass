@@ -156,8 +156,8 @@ export interface Species {
   /**
    * The colour of the ground under it, as a multiplier on the ground's own (the host's, under
    * `groundShade`): the ground shows between the stems of a thin stand, and is not the same ground
-   * everywhere. Sand under a links' thin fescue, peat under a heath, mud in a wet meadow. Only between the
-   * leaves: far off, where the ground stands in for the stand, it is the stand's colour. Left out: 1, 1, 1.
+   * everywhere. Sand under a links' thin fescue, peat under a heath, mud in a wet meadow. Not far off, where
+   * the ground stands in for the stand seen from there: that is the stand's colour. Left out: 1, 1, 1.
    */
   soil?: [number, number, number];
   /**
