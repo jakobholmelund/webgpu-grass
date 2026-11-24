@@ -281,7 +281,11 @@ grass about it is, but not tinted as the grass is to match its ground: a
 host that puts its ground's colours in `world.tint` gives the light alone
 as `world.light`, which flowers take. `look.blooms = false` draws none.
 Where each place has a flower, and which, is worked out once a frame in a
-compute pass. In `TURF_SPECIES` the mown surfaces, the rough among them,
+compute pass, which passes over the places that cannot have one or could
+not be seen (no flowers in the species, too near or too far for the
+square, behind the eye) before the colonies are looked for, and the
+flowers are drawn without the empty places: `stats.flowersDrawn` says how
+many, when `grass.countDrawn` is asked. In `TURF_SPECIES` the mown surfaces, the rough among them,
 have none: a course keeps them clear. The deep rough has cat's-ear,
 bird's-foot trefoil, ox-eye daisies and creeping buttercup; the fescue
 cat's-ear, ox-eye daisies, harebells and yarrow; the meadow buttercups, red
