@@ -564,6 +564,8 @@ export function createGrass(options: GrassOptions): Grass {
   const shadowMats = [new THREE.Matrix4(), new THREE.Matrix4()];
   const shadowNodes: THREE.TextureNode[] = [];
   const uSunMat = uniform(new THREE.Matrix4());
+  /** 1 when the renderer keeps depth reversed (`reversedDepthBuffer`): the sun's picture is then near 1, far 0. */
+  const uReversedDepth = uniform(0);
   const uShadowOn = uniform(0);
   /** Where the leaves are thickest, and thin out from: the eye (x, y, z, and its height over the ground in w), or the place the host says the picture is of (w 0). */
   const uThickAt = uniform(new THREE.Vector4());
@@ -693,14 +695,17 @@ export function createGrass(options: GrassOptions): Grass {
     const inPicture = vec2(clip.x.mul(0.5).add(0.5), clip.y.mul(-0.5).add(0.5));
     const node = texture(shadowTargets[0].depthTexture!, inPicture).level(float(0));
     shadowNodes.push(node as unknown as THREE.TextureNode);
-    const nearest = (node as unknown as Vec4).x;
+    // (A renderer that keeps depth reversed draws the sun's picture with near at 1 and far at 0: turned back,
+    // both are the share of the way from near to far, as below.)
+    const nearest = mix((node as unknown as Vec4).x, float(1).sub((node as unknown as Vec4).x), uReversedDepth);
+    const sunDepth = mix(clip.z, float(1).sub(clip.z), uReversedDepth);
     // (Known only as far as the leaves that are drawn into the picture go: they thin out away from the eye
     // as their square does, and past them the picture is empty, which is not the same as sunlit.)
     const casters = leavesAt(fromThick(vec2(at.x, at.z)), SHADOW_CAST_RANGE_M);
     const known = float(1).sub(smoothstep(float(0.8), float(0.98), max(abs(clip.x), abs(clip.y)))).mul(uShadowOn).mul(casters);
     // (In shadow by degrees over a little depth, not all at once: a leaf swaying across a shadow's edge
     // darkens as it goes in, where one that is either lit or not twinkles.)
-    const sunPast = (gap: THREE.Node<"float">) => clamp(nearest.sub(clip.z.sub(gap.div(SHADOW_DEEP_M))).div(SHADOW_SOFT_M / SHADOW_DEEP_M).add(1), float(0), float(1));
+    const sunPast = (gap: THREE.Node<"float">) => clamp(nearest.sub(sunDepth.sub(gap.div(SHADOW_DEEP_M))).div(SHADOW_SOFT_M / SHADOW_DEEP_M).add(1), float(0), float(1));
     // (The picture cannot tell apart what lies within one of its pixels, and under a low sun a pixel is a
     // long way along the ground: a pixel's breadth over the sun's slope. Leaves nearer each other than that
     // are not in each other's shadow by it, or a short sward comes out in blocks the size of the pixels.)
@@ -2259,6 +2264,7 @@ export function createGrass(options: GrassOptions): Grass {
         const read = 1 - write;
         for (const n of shadowNodes) n.value = shadowTargets[read].depthTexture!;
         uSunMat.value.copy(shadowMats[read]);
+        uReversedDepth.value = renderer.reversedDepthBuffer ? 1 : 0;
         uShadowOn.value = shadowTurn > 0 ? 1 : 0;
         shadowAt.set(eye.x + f.x * SHADOW_HALF_M * 0.7, eye.y - uEyeUp.value, eye.z + f.y * SHADOW_HALF_M * 0.7);
         // (By whole pixels of the picture: moved by part of one, every shadow's edge shifts as the eye does.)
