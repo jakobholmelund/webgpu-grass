@@ -184,6 +184,17 @@ export const SCENES: Scene[] = [
     sun: [130, 24], wind: [200, 4],
   },
   {
+    id: "daisies",
+    title: "Daisies in the rough",
+    blurb: "The rough's own flower, here thick on the ground (it comes in thin drifts as the rough is made): petals within a few strides of the eye, dots of their colour beyond.",
+    species: turf((list) => {
+      Object.assign(list[ROUGH], { bloomCover: 0.75, bloomPerM2: 30 });
+    }),
+    plot: ROUGH, row: ROUGH,
+    view: { x: 14, z: -6, eye: 0.32, yaw: -0.9, pitch: -0.36, fov: 42 },
+    sun: [150, 42], wind: [90, 3],
+  },
+  {
     id: "storybook",
     title: "Storybook",
     blurb: "The same rough with the style turned up: fewer, broader leaves and flat shading. Photographic to drawn is two sliders.",

@@ -21,6 +21,7 @@ import * as THREE from "three/webgpu";
 import { Fn, If, Loop, abs, asin, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, distance, dot, exp, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
 import { type HeightSource, type MapSource, type MowSource } from "./field";
 import { makeNoiseTexture } from "./noise";
+import { FLOWERS, type Flower, MAX_PETALS } from "./flowers";
 import { MAX_SPECIES, SPECIES_SLOTS, type Species, makeSpeciesTable, packSpecies } from "./species";
 
 type Int = THREE.Node<"int">;
@@ -363,7 +364,9 @@ export interface GrassOptions {
    * (`groundShade`) and has such a picture already gives it here, so the ground's shader looks up one
    * picture and not two: a shader stage has sixteen on any machine.
    */
-  noise?: THREE.Texture;
+/** Flowers of the host's own, by the names its species' `bloom` gives them: added to `FLOWERS`, or in place of one of the same name. */
+  flowers?: Readonly<Record<string, Flower>>;
+    noise?: THREE.Texture;
 }
 
 /** See `GrassOptions.world`. Any of them may be left out. */
@@ -408,6 +411,7 @@ export interface Grass {
    * left out, so the field keeps its cover: a host's own setting for a slower machine).
    * `brightest`: no leaf is drawn brighter than this (a host that blooms what is bright sets it
    * under its threshold, or a back-lit leaf is a lamp).
+   * `blooms`: whether the species' flowers are drawn (`Species.bloom`).
    * `wet`: how wet the leaves are, 0 (dry) to 1 (dew, or rain): what a trail through them leaves
    * (`setTrail`). The colour of wet grass is the host's to give (`world.tint`).
    * `site`: how far the grass's colour follows the lie of the ground, lusher in the hollows
@@ -430,7 +434,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; wet: number; amount: number; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; wet: number; blooms: boolean; amount: number; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -509,7 +513,7 @@ export interface Grass {
    * The plants there are in all, the most leaves they can stand up as, and `computed`: how many plants
    * the last frame worked out (the squares whose leaves could be in the picture; the rest were left alone).
    */
-  stats: { plants: number; leaves: number; computed: number };
+  stats: { plants: number; leaves: number; computed: number; flowers: number };
   dispose(): void;
 }
 
@@ -786,7 +790,8 @@ export function createGrass(options: GrassOptions): Grass {
   groundTex.needsUpdate = true;
   /** For each species' row, its ground picture's mean colour (linear), or null if it has no picture. */
   const groundOf: ({ mean: [number, number, number] } | null)[] = Array.from({ length: MAX_SPECIES }, () => null);
-  const repack = () => packSpecies(current, table, leafLayers, groundOf);
+  const flowers: Record<string, Flower> = { ...FLOWERS, ...(options.flowers ?? {}) };
+  const repack = () => packSpecies(current, table, leafLayers, groundOf, flowers);
   /** Put a picture's pixels (sRGB, and in alpha how high each stands; GROUND_SIZE square) in a species' layer, and note its mean. */
   const setGroundLayer = (rowIndex: number, px: Uint8Array | Uint8ClampedArray | null) => {
     if (px === null) groundOf[rowIndex] = null;
@@ -2104,8 +2109,174 @@ export function createGrass(options: GrassOptions): Grass {
   repack();
   const style = { broad: 0, flat: 0 };
   let frame = 0;
-  const stats = { plants: all.reduce((n, l) => n + l.total, 0), leaves: all.reduce((n, l) => n + l.leaves, 0), computed: 0 };
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, wet: 0, amount: 1, bare };
+
+  // Flowers (`Species.bloom`): two squares of places a flower could stand, following the eye as the leaves'
+  // squares do. Near the eye a flower is its petals, each a small curved surface about the stem's tip, its
+  // centre and its stalk; further off it is a dot of its colour, no smaller than most of a pixel. Which
+  // places have one is worked out where it is drawn, from the place's own number: nothing is kept.
+  const BLOOM_NEAR = { count: 96, spacing: 0.11, ahead: 1.5 };
+  const BLOOM_FAR = { count: 192, spacing: 0.16, ahead: 8 };
+  /** Metres from the eye over which petals give way to dots, and where the dots end. */
+  const BLOOM_PETALS_TO = [4.0, 5.0];
+  const BLOOM_DOTS_TO = [15, 19];
+  const bloomSite = (L: { count: number; spacing: number; ahead: number }) => {
+    const idx = float(instanceIndex);
+    const gx = mod(idx, float(L.count));
+    const gz = floor(idx.div(float(L.count)));
+    const middle = vec2(uCamPos.x, uCamPos.z).add(uCamFwd.mul(L.ahead));
+    const cell = floor(middle.div(L.spacing)).add(vec2(gx, gz)).sub(L.count * 0.5);
+    const hcell = mod(cell, float(1024)).add(vec2(L.count * 0.37, L.count * 0.11));
+    const r0 = hashCell(hcell);
+    const r1 = hashCell(hcell.add(31.7));
+    const luck = hashCell(hcell.add(57.1));
+    const xz = cell.add(vec2(r0, r1)).mul(L.spacing);
+    const here = map.sample(xz);
+    const k = int(min(here.species, float(MAX_SPECIES - 1)));
+    const kind = row(k, 13);
+    // (In drifts: where a slow noise is over what leaves the species' share of the ground.)
+    const drift = noise(xz.div(7.3).add(0.41)).r.mul(0.6).add(noise(xz.div(1.9).add(0.77)).g.mul(0.4));
+    const from = clamp(float(0.5).add(float(0.5).sub(kind.y).mul(0.6)), float(0.05), float(0.95));
+    const inDrift = smoothstep(from.sub(0.05), from.add(0.05), drift);
+    const kept = step(hashCell(hcell.add(91.7)), kind.x.mul(L.spacing * L.spacing).mul(inDrift).mul(uAmount));
+    const ground = height.sample(xz);
+    const root = vec3(xz.x, ground.height, xz.y);
+    const away = distance(root, uCamPos);
+    const alive = step(here.species, float(MAX_SPECIES - 0.5)).mul(step(float(1e-3), kind.x)).mul(kept).mul(step(float(0.12), here.edge));
+    // How tall it stands: its own height, some more and some less, and over the grass if the grass is taller.
+    // (Well over it: a flower in grass grows its stalk to reach the light, and one drawn down among the leaves is not seen from any way off.)
+    const tall = max(kind.w.mul(mix(float(0.8), float(1.25), luck)), row(k, 0).x.mul(mix(float(1.25), float(1.6), luck)));
+    // The wind: it nods downwind, further in a gust, and swings a little about that.
+    const wDir = normalize(vec2(uWind.x, uWind.y).add(vec2(1e-4, 0)));
+    const gustAt = xz.sub(wDir.mul(uTime.mul(float(1.2).add(uWind.z.mul(0.55)))));
+    const gust = smoothstep(float(0.3), float(0.72), noise(gustAt.div(61.0)).r);
+    const swing = sin(uTime.mul(float(2.1).add(uWind.z.mul(0.2))).add(luck.mul(6.2832)).sub(dot(xz, wDir).mul(3.2)));
+    const nod = wDir.mul(clamp(uWind.z.div(8), float(0), float(1.7)).mul(float(0.22).add(gust.mul(0.5))).add(swing.mul(0.1).mul(min(uWind.z.div(4), float(1))))).mul(tall).mul(0.4);
+    const head = root.add(vec3(nod.x, tall, nod.y));
+    // (The head faces up the stalk, each tipped a little its own way.)
+    const tip = vec2(hashCell(hcell.add(13.9)), hashCell(hcell.add(71.3))).sub(0.5).mul(0.5);
+    const up = normalize(vec3(nod.x.div(tall).add(tip.x), float(1), nod.y.div(tall).add(tip.y)));
+    return { xz, root, head, up, k, kind, alive, luck, away, tall };
+  };
+  /** A flower's colour as it is lit there, into the host's air, and no brighter than leaves may be. */
+  const bloomLit = (col: Vec3, xz: Vec2, at: Vec3, up: THREE.Node<"float">, facing: Vec3): Vec3 => {
+    const lit = col.mul(light(facing)).mul(mix(inShade(), vec3(1), sunReach(xz, up)));
+    const tinted = options.world?.tint ? lit.mul(options.world.tint(xz)) : lit;
+    const inAir = options.world?.air ? options.world.air(tinted, at) : tinted;
+    return inAir.mul(min(float(1), uBrightest.div(max(max(inAir.x, inAir.y), max(inAir.z, float(1e-4))))));
+  };
+  const hidden = vec3(0, -9999, 0);
+  const makeBlooms = () => {
+    // Near: `position` is (across, along, which petal), `uv.x` which part: 0 a petal, 1 the centre, 2 the stalk.
+    const pos: number[] = [];
+    const part: number[] = [];
+    const index: number[] = [];
+    for (let slot = 0; slot < MAX_PETALS; slot++) {
+      const v0 = pos.length / 3;
+      for (const along of [0, 0.55, 1]) for (const across of [-1, 1]) { pos.push(across, along, slot); part.push(0, 0); }
+      index.push(v0, v0 + 1, v0 + 2, v0 + 1, v0 + 3, v0 + 2, v0 + 2, v0 + 3, v0 + 4, v0 + 3, v0 + 5, v0 + 4);
+    }
+    const c0 = pos.length / 3;
+    pos.push(0, 0, 0);
+    part.push(1, 0);
+    for (let i = 0; i < 8; i++) { pos.push(Math.cos((i / 8) * Math.PI * 2), 1, Math.sin((i / 8) * Math.PI * 2)); part.push(1, 0); }
+    for (let i = 0; i < 8; i++) index.push(c0, c0 + 1 + i, c0 + 1 + ((i + 1) % 8));
+    const s0 = pos.length / 3;
+    for (const along of [0, 0.5, 1]) for (const across of [-1, 1]) { pos.push(across, along, 0); part.push(2, 0); }
+    index.push(s0, s0 + 1, s0 + 2, s0 + 1, s0 + 3, s0 + 2, s0 + 2, s0 + 3, s0 + 4, s0 + 3, s0 + 5, s0 + 4);
+    const nearGeo = new THREE.InstancedBufferGeometry();
+    nearGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+    nearGeo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(part), 2));
+    nearGeo.setIndex(index);
+    nearGeo.instanceCount = BLOOM_NEAR.count * BLOOM_NEAR.count;
+
+    const near = (() => {
+      const site = bloomSite(BLOOM_NEAR);
+      const g = positionGeometry;
+      const isCentre = step(float(0.5), uv().x).mul(step(uv().x, float(1.5)));
+      const isStalk = step(float(1.5), uv().x);
+      const shape = row(site.k, 14);
+      const petals = site.kind.z;
+      // (Smaller as they give way to the dots, and gone where the dots have taken over.)
+      const size = float(1).sub(smoothstep(float(BLOOM_PETALS_TO[0]), float(BLOOM_PETALS_TO[1]), site.away));
+      const axisX = normalize(cross(site.up, vec3(0, 0, 1)));
+      const axisZ = cross(axisX, site.up);
+      // A petal: out from the centre's rim along its own way, rising as it goes, broadest past its middle.
+      const slot = g.z;
+      const along = g.y;
+      const own = hashCell(vec2(slot.mul(7.13), site.luck.mul(91.7)));
+      const angle = slot.add(site.luck).add(own.sub(0.5).mul(0.35)).div(petals).mul(6.2832);
+      const out = vec2(cos(angle), sin(angle));
+      const reach = shape.w.mul(0.4).add(along.mul(shape.x).mul(mix(float(0.86), float(1.1), own)));
+      const broad = shape.y.mul(0.5).mul(mix(float(0.4), float(1), smoothstep(float(0), float(0.55), along))).mul(mix(float(1), float(0.45), smoothstep(float(0.55), float(1), along)));
+      // (A flat flower's petals lie out; a ball's curl up and over, so the head is as tall as it is broad.)
+      const turnUp = shape.z.mul(1.5708).mul(mix(float(0.85), float(1.2), own));
+      const outBy = shape.w.mul(0.4).add(reach.sub(shape.w.mul(0.4)).mul(cos(turnUp.mul(along))));
+      const upBy = reach.sub(shape.w.mul(0.4)).mul(sin(turnUp.mul(along))).add(own.sub(0.5).mul(shape.x).mul(0.12).mul(along));
+      const flat = out.mul(outBy).add(vec2(out.y.negate(), out.x).mul(g.x).mul(broad));
+      const petalAt = site.head.add(axisX.mul(flat.x).add(axisZ.mul(flat.y)).add(site.up.mul(upBy)).mul(size));
+      // The centre: a low dome.
+      const rim = shape.w.mul(0.5);
+      const centreAt = site.head.add(axisX.mul(g.x.mul(rim)).add(axisZ.mul(g.z.mul(rim))).add(site.up.mul(float(1).sub(along).mul(rim).mul(0.45).add(shape.x.mul(shape.z).mul(0.2)))).mul(size));
+      // The stalk: a thread from the ground to the head, bowed the way the head nods.
+      const toEye = normalize(cameraPosition.sub(site.root));
+      const side = normalize(cross(toEye, vec3(0, 1, 0)));
+      const stalkAt = mix(site.root, site.head, along).add(vec3(0, 1, 0).mul(site.tall.mul(0.06).mul(sin(along.mul(3.1416))))).add(side.mul(g.x).mul(0.0006).mul(float(1).add(site.away.mul(0.6))));
+      const gone = site.alive.mul(size).lessThan(0.02).or(isCentre.add(isStalk).lessThan(0.5).and(slot.greaterThanEqual(petals.sub(0.5))));
+      const at = gone.select(hidden, mix(mix(petalAt, centreAt, isCentre), stalkAt, isStalk));
+      const petalCol = vec3(row(site.k, 15).x, row(site.k, 15).y, row(site.k, 15).z).mul(mix(float(0.78), float(1.04), along)).mul(mix(float(0.93), float(1.05), own));
+      const centreCol = vec3(row(site.k, 16).x, row(site.k, 16).y, row(site.k, 16).z).mul(mix(float(1.08), float(0.8), along));
+      const stalkCol = vec3(row(site.k, 4).x, row(site.k, 4).y, row(site.k, 4).z).mul(mix(float(0.55), float(0.95), along));
+      const facing = normalize(site.up.add(axisX.mul(out.x).add(axisZ.mul(out.y)).mul(shape.z.mul(along)).mul(float(1).sub(isCentre)).mul(float(1).sub(isStalk))));
+      const col = bloomLit(mix(mix(petalCol, centreCol, isCentre), stalkCol, isStalk), site.xz, at, site.tall, facing);
+      const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
+      mat.positionNode = at;
+      mat.colorNode = vec4(varying(col, "vBloomCol"), 1);
+      const mesh = new THREE.Mesh(nearGeo, mat);
+      mesh.name = "grass-BloomNear";
+      mesh.frustumCulled = false;
+      return { mesh, mat };
+    })();
+
+    // Far: a dot to a flower, turned to the eye, of the flower's own breadth or most of a pixel.
+    const farGeo = new THREE.InstancedBufferGeometry();
+    farGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0]), 3));
+    farGeo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), 2));
+    farGeo.setIndex([0, 1, 2, 1, 3, 2]);
+    farGeo.instanceCount = BLOOM_FAR.count * BLOOM_FAR.count;
+    const far = (() => {
+      const site = bloomSite(BLOOM_FAR);
+      const g = positionGeometry;
+      const shape = row(site.k, 14);
+      const shows = smoothstep(float(BLOOM_PETALS_TO[0]), float(BLOOM_PETALS_TO[1]), site.away).mul(float(1).sub(smoothstep(float(BLOOM_DOTS_TO[0]), float(BLOOM_DOTS_TO[1]), site.away)));
+      const own = shape.x.mul(mix(float(1), float(0.55), shape.z)).add(shape.w.mul(0.4)).mul(0.85);
+      const drawn = max(own, site.away.mul(uPixel).mul(0.6));
+      const toEye = normalize(cameraPosition.sub(site.head));
+      const side = normalize(cross(vec3(0, 1, 0), toEye));
+      const upOn = cross(toEye, side);
+      const at = site.alive.mul(shows).lessThan(0.02).select(hidden, site.head.add(side.mul(g.x).add(upOn.mul(g.y)).mul(drawn)));
+      // (Mostly its petals' colour, a little of its centre's; and a dot drawn larger than the flower is as much fainter, toward the grass it stands in.)
+      const flowerCol = mix(vec3(row(site.k, 15).x, row(site.k, 15).y, row(site.k, 15).z), vec3(row(site.k, 16).x, row(site.k, 16).y, row(site.k, 16).z), 0.16);
+      const grassCol = vec3(row(site.k, 4).x, row(site.k, 4).y, row(site.k, 4).z);
+      const strength = clamp(own.div(drawn), float(0), float(1));
+      const col = bloomLit(mix(grassCol, flowerCol, mix(float(0.18), float(1), strength.mul(strength)).mul(shows)), site.xz, at, site.tall, site.up);
+      const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
+      mat.positionNode = at;
+      mat.colorNode = vec4(varying(col, "vBloomDotCol"), 1);
+      const round = uv().sub(0.5).mul(2);
+      mat.maskNode = dot(round, round).lessThan(1);
+      const mesh = new THREE.Mesh(farGeo, mat);
+      mesh.name = "grass-BloomFar";
+      mesh.frustumCulled = false;
+      return { mesh, mat };
+    })();
+    geometries.push(nearGeo, farGeo);
+    materials.push(near.mat, far.mat);
+    group.add(near.mesh, far.mesh);
+    return [near.mesh, far.mesh];
+  };
+  const bloomMeshes = makeBlooms();
+  const stats = { plants: all.reduce((n, l) => n + l.total, 0), leaves: all.reduce((n, l) => n + l.leaves, 0), computed: 0, flowers: BLOOM_NEAR.count * BLOOM_NEAR.count + BLOOM_FAR.count * BLOOM_FAR.count };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, wet: 0, blooms: true, amount: 1, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const shadowAt = new THREE.Vector3();
@@ -2204,6 +2375,7 @@ export function createGrass(options: GrassOptions): Grass {
       uSite.value = look.site;
       uBrightest.value = look.brightest;
       uWet.value = Math.min(1, Math.max(0, look.wet));
+      for (const m of bloomMeshes) m.visible = look.blooms;
       uAmount.value = Math.min(1, Math.max(0.05, look.amount));
       uShade.value.set(look.shadow, look.occlusion);
       uDetail.value.set(look.fold, look.relief, look.leafPixels);
@@ -2278,6 +2450,8 @@ export function createGrass(options: GrassOptions): Grass {
         sunCam.up.set(0, uSun.value.y > 0.95 ? 0 : 1, uSun.value.y > 0.95 ? 1 : 0);
         sunCam.lookAt(shadowAt);
         sunCam.updateMatrixWorld();
+        // (Flowers cast no shadow on the leaves: they are not in the sun's picture.)
+        for (const m of bloomMeshes) m.visible = false;
         const were = all.map((l) => l.mesh.visible);
         for (const l of all) l.mesh.visible = l.mesh.visible && l.fine && l.range < SHADOW_NEAR_RANGE_M;
         const before = renderer.getRenderTarget();
@@ -2287,6 +2461,7 @@ export function createGrass(options: GrassOptions): Grass {
         uFromSun.value = 0;
         renderer.setRenderTarget(before);
         all.forEach((l, i) => (l.mesh.visible = were[i]));
+        for (const m of bloomMeshes) m.visible = look.blooms;
         shadowMats[write].multiplyMatrices(sunCam.projectionMatrix, sunCam.matrixWorldInverse);
         shadowTurn++;
       } else {

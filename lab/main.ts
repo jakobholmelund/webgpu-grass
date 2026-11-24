@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b65";
+const LAB_BUILD = "b66";
 const query = new URLSearchParams(location.search);
 
 interface Preset {
@@ -586,6 +586,8 @@ async function start() {
     shownAs(habitPanel, s, "stiffness", 100, 0, 100, "stiffness (%)").onChange(changed);
     shownAs(habitPanel, s, "clump", 100, 0, 100, "clumping (%)").onChange(changed);
     shownAs(habitPanel, s, "tussock", 100, 0, 100, "tussocks (%)").onChange(changed);
+    habitPanel.add(s, "bloomPerM2", 0, 40, 1).name("flowers to the square metre").onChange(changed);
+    shownAs(habitPanel, s, "bloomCover", 100, 0, 100, "ground they bloom on (%)").onChange(changed);
     shownAs(habitPanel, s, "disorder", 100, 0, 100, "disorder (%)").onChange(changed);
     shownAs(habitPanel, s, "lay", 100, 0, 100, "laid by the mower (%)").onChange(changed);
     const colourPanel = folder("Colour");

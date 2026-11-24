@@ -157,6 +157,30 @@ is a separate mower at a fixed height, so its edges are steps
   in the model: it is added as a little more light sent back, most of it
   blue, by estimate.
 
+## Flowers
+
+A species can have a flower in it: `bloom` names one (`"daisy"`,
+`"buttercup"`, `"dandelion"`, `"clover"`, or one of the host's own, given as
+`flowers` when the grass is made), `bloomPerM2` is how many to the square
+metre where they grow, and `bloomCover` the share of the stand's ground
+they grow on, since flowers come in drifts. A `Flower` is plain data, as a
+species is: how many petals, how long and broad, how far they rise from
+flat, the centre's breadth, how tall it stands, two colours.
+
+Within a few strides of the eye a flower is its petals, its centre and its
+stalk; from there to about nineteen metres it is a dot of its colour, and
+beyond that nothing. It nods in the wind and is lit and shaded as the
+grass about it is. `look.blooms = false` draws none. The rough in
+`TURF_SPECIES` has daisies in thin drifts.
+
+Not done: a ball or a foot does not flatten or hide a flower, flowers cast
+no shadow, and a daisy's thirty-odd rays are drawn as sixteen.
+
+The way a head is built, each petal a small curved surface with nearer
+and further drawings of it, follows
+[Inkwell's WebGPU flower field](https://github.com/siliconjungle/inkwell-webgpu-flowers)
+(MIT). None of its code or art is used.
+
 ## Things in the grass
 
 `grass.setThings([{ x, y, z, radius, clear, keepSeen }])` tells the grass

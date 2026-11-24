@@ -6,6 +6,7 @@
 // names one.
 
 import * as THREE from "three/webgpu";
+import { FLOWERS, type Flower, MAX_PETALS } from "./flowers";
 
 /** How a leaf ends: grown to a point, cut by a mower on a slant, or cut off square as close-mown turf is. */
 export type TipShape = "point" | "cut" | "square";
@@ -90,6 +91,14 @@ export interface Species {
    */
   cutTip: number;
 
+  // What flowers in it.
+  /** The flower that blooms among it, by its name in the flowers the grass was given (`FLOWERS`: "daisy", "buttercup", "dandelion", "clover"), or "" for none. */
+  bloom: string;
+  /** Flowers to the square metre where they bloom (up to about 40: further off a flower is a dot, and there are only so many dots). */
+  bloomPerM2: number;
+  /** The share of the stand's ground they bloom on, 0..1: flowers come in drifts, not evenly. */
+  bloomCover: number;
+
   // Its edge, where other grass begins.
   /**
    * How far its edge strays into it (m). 0 is a mown edge: a mower cuts to a line, and the grass is one
@@ -154,7 +163,7 @@ export type TextureMode = "detail" | "color";
 export const MAX_SPECIES = 8;
 /** Four numbers to a slot, this many slots to a species. */
 export type PatchKind = "colonies" | "blotches";
-export const SPECIES_SLOTS = 13;
+export const SPECIES_SLOTS = 17;
 
 const TIP_CODE: Record<TipShape, number> = { point: 0, cut: 1, square: 2 };
 
@@ -179,6 +188,10 @@ export function makeSpeciesTable(): THREE.Vector4[] {
  *  10  patchTint r, g, b, patch
  *   9  the ground's picture's own mean colour (linear r, g, b)
  *  12  tussock, stem, flower
+ *  13  its flower: flowers to the square metre (0 for none), the share of ground, petals, how tall it stands
+ *  14  a petal's length and width, its lift, the centre's breadth
+ *  15  the petals' colour (linear r, g, b)
+ *  16  the centre's colour (linear r, g, b)
  *
  * `layers` gives each picture's name its layer in the leaf texture.
  */
@@ -187,6 +200,7 @@ export function packSpecies(
   table: THREE.Vector4[],
   layers: ReadonlyMap<string, number> = new Map(),
   ground: readonly ({ mean: readonly [number, number, number] } | null)[] = [],
+  flowers: Readonly<Record<string, Flower>> = FLOWERS,
 ): void {
   if (list.length > MAX_SPECIES) throw new Error(`At most ${MAX_SPECIES} species, got ${list.length}`);
   const c = new THREE.Color();
@@ -210,6 +224,18 @@ export function packSpecies(
     const under = ground[k] ?? null;
     table[row + 8].set(under ? s.groundDetail : 0, Math.max(0.05, s.groundTile), Math.max(0.02, s.patchSize), s.patchTall);
     table[row + 11].set(Math.min(1, Math.max(-1, s.patchSite)), Math.max(0, s.edgeBlend), Math.min(1, Math.max(0, s.cutTip)), 0);
+    const f = s.bloom ? flowers[s.bloom] : undefined;
+    if (f && s.bloomPerM2 > 0 && s.bloomCover > 0) {
+      table[row + 13].set(Math.max(0, s.bloomPerM2), Math.min(1, Math.max(0, s.bloomCover)), Math.min(MAX_PETALS, Math.max(3, Math.round(f.petals))), f.stem);
+      table[row + 14].set(f.petalLength, f.petalWidth, Math.min(1, Math.max(0, f.lift)), f.centre);
+      c.set(f.petalColor);
+      table[row + 15].set(c.r, c.g, c.b, 0);
+      c.set(f.centreColor);
+      table[row + 16].set(c.r, c.g, c.b, 0);
+    } else {
+      for (let i = 13; i <= 16; i++) table[row + i].set(0, 0, 0, 0);
+    }
+    c.set(s.color);
     table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), 0);
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
     table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, s.patchKind === "blotches" ? 1 : 0);
@@ -219,7 +245,7 @@ export function packSpecies(
 /** A plain leaf: what a species written before leaves had pictures is given. */
 const NO_TEXTURE = { leafTexture: "", textureMode: "detail" as TextureMode, textureStrength: 1, textureCutout: false };
 /** What a species written before these were settings is given: a plain leaf, standing as it grew. */
-const NO_PATCHES = { tussock: 0, stem: 0, flower: 0, cutTip: 0, edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
+const NO_PATCHES = { tussock: 0, stem: 0, flower: 0, bloom: "", bloomPerM2: 0, bloomCover: 0, cutTip: 0, edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
 const ADDED_LATER = { ...NO_TEXTURE, ...NO_PATCHES, lay: 0, groundDetail: 1, groundTile: 0.6 };
 
 /**
@@ -392,6 +418,8 @@ export const TURF_SPECIES: Species[] = [
     variation: 0.3, dry: 0.02, sheen: 1,
     // (Something low and dark among it: clover, where nobody sprays.)
     patch: 0.08, patchSize: 0.66, patchTint: [0.72, 0.95, 0.72], patchTall: 0.7,
+    // (And daisies, in drifts: they come through any rough that is not sprayed, and a mower passes over them.)
+    bloom: "daisy", bloomPerM2: 26, bloomCover: 0.14,
   }),
   turf("Deep rough (red fescue)", 3, { twist: 0.6,
     height: 0.125, heightSpread: 0.5, density: 1.4, width: 0.0009, widthSpread: 0.0004, tip: "point",
