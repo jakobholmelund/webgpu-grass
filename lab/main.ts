@@ -13,7 +13,7 @@
 import * as THREE from "three/webgpu";
 import { dot, float, length, max, mix, normalWorld, normalize, positionGeometry, positionWorld, pow, sin, smoothstep, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import GUI from "three/addons/libs/lil-gui.module.min.js";
-import { MAX_LEAF_TEXTURES, TURF_SPECIES, type Species, type SpecimenKind, checkSpecies, cloneSpecies, createGrass, heightAt, heightGrid, mowStripes, speciesMap, thingMiddleFor } from "../src/index";
+import { FLOWERS, MAX_BLOOMS, MAX_LEAF_TEXTURES, TURF_SPECIES, type Species, type SpecimenKind, checkSpecies, cloneSpecies, createGrass, heightAt, heightGrid, mowStripes, speciesMap, thingMiddleFor } from "../src/index";
 import { LEAF_ART } from "./leafart";
 import { type PlotLayout, TURF_LAYOUT, makeHeights, makeMap } from "./world";
 import { SCENES, type Scene } from "./scenes";
@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b66";
+const LAB_BUILD = "b67";
 const query = new URLSearchParams(location.search);
 /** The most species a scene of the lab's has. */
 const LAB_ROWS = 11;
@@ -590,10 +590,25 @@ async function start() {
     shownAs(habitPanel, s, "stiffness", 100, 0, 100, "stiffness (%)").onChange(changed);
     shownAs(habitPanel, s, "clump", 100, 0, 100, "clumping (%)").onChange(changed);
     shownAs(habitPanel, s, "tussock", 100, 0, 100, "tussocks (%)").onChange(changed);
-    habitPanel.add(s, "bloomPerM2", 0, 40, 1).name("flowers to the square metre").onChange(changed);
-    shownAs(habitPanel, s, "bloomCover", 100, 0, 100, "ground they bloom on (%)").onChange(changed);
     shownAs(habitPanel, s, "disorder", 100, 0, 100, "disorder (%)").onChange(changed);
     shownAs(habitPanel, s, "lay", 100, 0, 100, "laid by the mower (%)").onChange(changed);
+    // Its flowers: four places for one, each a flower (or none), how many, on how much ground, and where.
+    const bloomPanel = folder("Flowers");
+    const slots = Array.from({ length: MAX_BLOOMS }, (_, j) => {
+      const b = s.blooms[j];
+      return { flower: b?.flower ?? "none", perM2: b?.perM2 ?? 20, cover: Math.round((b?.cover ?? 0.15) * 100), site: b?.site ?? 0, patches: b?.where === "patches" };
+    });
+    const bloomsChanged = () => {
+      s.blooms = slots.filter((p) => p.flower !== "none").map((p) => ({ flower: p.flower, perM2: p.perM2, cover: p.cover / 100, site: p.site, where: p.patches ? "patches" : "drifts" }));
+      changed();
+    };
+    slots.forEach((p, j) => {
+      bloomPanel.add(p, "flower", ["none", ...Object.keys(FLOWERS)]).name(`flower ${j + 1}`).onChange(bloomsChanged);
+      bloomPanel.add(p, "perM2", 0, 40, 1).name("  to the square metre").onChange(bloomsChanged);
+      bloomPanel.add(p, "cover", 0, 100, 1).name("  ground they bloom on (%)").onChange(bloomsChanged);
+      bloomPanel.add(p, "site", -1, 1, 0.1).name("  hollows (-1) or crowns (1)").onChange(bloomsChanged);
+      bloomPanel.add(p, "patches").name("  only in its patches").onChange(bloomsChanged);
+    });
     const colourPanel = folder("Colour");
     colourPanel.addColor(s, "color").name("colour").onChange(changed);
     (["red", "green", "blue"] as const).forEach((ch, i) => shownAs(colourPanel, s.tipTint, String(i), 100, 60, 160, `tip ${ch} (%)`).onChange(changed));

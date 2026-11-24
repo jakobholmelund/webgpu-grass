@@ -6,7 +6,7 @@
 // names one.
 
 import * as THREE from "three/webgpu";
-import { FLOWERS, type Flower, MAX_PETALS } from "./flowers";
+import { type Bloom, MAX_BLOOMS } from "./flowers";
 
 /** How a leaf ends: grown to a point, cut by a mower on a slant, or cut off square as close-mown turf is. */
 export type TipShape = "point" | "cut" | "square";
@@ -92,12 +92,8 @@ export interface Species {
   cutTip: number;
 
   // What flowers in it.
-  /** The flower that blooms among it, by its name in the flowers the grass was given (`FLOWERS`: "daisy", "buttercup", "dandelion", "clover"), or "" for none. */
-  bloom: string;
-  /** Flowers to the square metre where they bloom (up to about 40: further off a flower is a dot, and there are only so many dots). */
-  bloomPerM2: number;
-  /** The share of the stand's ground they bloom on, 0..1: flowers come in drifts, not evenly. */
-  bloomCover: number;
+  /** The flowers that bloom among it, up to `MAX_BLOOMS` (none: an empty list). See `Bloom`. */
+  blooms: Bloom[];
 
   // Its edge, where other grass begins.
   /**
@@ -163,7 +159,7 @@ export type TextureMode = "detail" | "color";
 export const MAX_SPECIES = 16;
 /** Four numbers to a slot, this many slots to a species. */
 export type PatchKind = "colonies" | "blotches";
-export const SPECIES_SLOTS = 17;
+export const SPECIES_SLOTS = 18;
 
 const TIP_CODE: Record<TipShape, number> = { point: 0, cut: 1, square: 2 };
 
@@ -188,19 +184,21 @@ export function makeSpeciesTable(): THREE.Vector4[] {
  *  10  patchTint r, g, b, patch
  *   9  the ground's picture's own mean colour (linear r, g, b)
  *  12  tussock, stem, flower
- *  13  its flower: flowers to the square metre (0 for none), the share of ground, petals, how tall it stands
- *  14  a petal's length and width, its lift, the centre's breadth
- *  15  the petals' colour (linear r, g, b)
- *  16  the centre's colour (linear r, g, b)
+ *  13  its flowers (`blooms`, four to a slot from here): their rows in the flower table (-1 for none)
+ *  14    flowers to the square metre
+ *  15    the share of ground
+ *  16    where they take (-1 hollows .. 1 crowns)
+ *  17    1 if they flower only in the species' patches
  *
- * `layers` gives each picture's name its layer in the leaf texture.
+ * `layers` gives each picture's name its layer in the leaf texture, `flowerAt` each flower's name its
+ * row in the flower table (`packFlowers`).
  */
 export function packSpecies(
   list: readonly Species[],
   table: THREE.Vector4[],
   layers: ReadonlyMap<string, number> = new Map(),
   ground: readonly ({ mean: readonly [number, number, number] } | null)[] = [],
-  flowers: Readonly<Record<string, Flower>> = FLOWERS,
+  flowerAt: ReadonlyMap<string, number> = new Map(),
 ): void {
   if (list.length > MAX_SPECIES) throw new Error(`At most ${MAX_SPECIES} species, got ${list.length}`);
   const c = new THREE.Color();
@@ -224,17 +222,25 @@ export function packSpecies(
     const under = ground[k] ?? null;
     table[row + 8].set(under ? s.groundDetail : 0, Math.max(0.05, s.groundTile), Math.max(0.02, s.patchSize), s.patchTall);
     table[row + 11].set(Math.min(1, Math.max(-1, s.patchSite)), Math.max(0, s.edgeBlend), Math.min(1, Math.max(0, s.cutTip)), 0);
-    const f = s.bloom ? flowers[s.bloom] : undefined;
-    if (f && s.bloomPerM2 > 0 && s.bloomCover > 0) {
-      table[row + 13].set(Math.max(0, s.bloomPerM2), Math.min(1, Math.max(0, s.bloomCover)), Math.min(MAX_PETALS, Math.max(3, Math.round(f.petals))), f.stem);
-      table[row + 14].set(f.petalLength, f.petalWidth, Math.min(1, Math.max(0, f.lift)), f.centre);
-      c.set(f.petalColor);
-      table[row + 15].set(c.r, c.g, c.b, 0);
-      c.set(f.centreColor);
-      table[row + 16].set(c.r, c.g, c.b, 0);
-    } else {
-      for (let i = 13; i <= 16; i++) table[row + i].set(0, 0, 0, 0);
-    }
+    const ids = [-1, -1, -1, -1];
+    const perM2 = [0, 0, 0, 0];
+    const cover = [0, 0, 0, 0];
+    const site = [0, 0, 0, 0];
+    const inPatches = [0, 0, 0, 0];
+    (s.blooms ?? []).slice(0, MAX_BLOOMS).forEach((b, j) => {
+      const at = flowerAt.get(b.flower);
+      if (at === undefined || !(b.perM2 > 0)) return;
+      ids[j] = at;
+      perM2[j] = b.perM2;
+      cover[j] = Math.min(1, Math.max(0, b.cover));
+      site[j] = Math.min(1, Math.max(-1, b.site ?? 0));
+      inPatches[j] = b.where === "patches" ? 1 : 0;
+    });
+    table[row + 13].set(ids[0], ids[1], ids[2], ids[3]);
+    table[row + 14].set(perM2[0], perM2[1], perM2[2], perM2[3]);
+    table[row + 15].set(cover[0], cover[1], cover[2], cover[3]);
+    table[row + 16].set(site[0], site[1], site[2], site[3]);
+    table[row + 17].set(inPatches[0], inPatches[1], inPatches[2], inPatches[3]);
     c.set(s.color);
     table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), 0);
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
@@ -245,7 +251,7 @@ export function packSpecies(
 /** A plain leaf: what a species written before leaves had pictures is given. */
 const NO_TEXTURE = { leafTexture: "", textureMode: "detail" as TextureMode, textureStrength: 1, textureCutout: false };
 /** What a species written before these were settings is given: a plain leaf, standing as it grew. */
-const NO_PATCHES = { tussock: 0, stem: 0, flower: 0, bloom: "", bloomPerM2: 0, bloomCover: 0, cutTip: 0, edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
+const NO_PATCHES = { tussock: 0, stem: 0, flower: 0, blooms: [] as Bloom[], cutTip: 0, edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
 const ADDED_LATER = { ...NO_TEXTURE, ...NO_PATCHES, lay: 0, groundDetail: 1, groundTile: 0.6 };
 
 /**
@@ -334,7 +340,12 @@ export const STARTER_SPECIES: Species[] = [
 
 /** A copy that shares nothing with the original, for the lab's editing and for presets. */
 export function cloneSpecies(list: readonly Species[]): Species[] {
-  return list.map((s) => ({ ...ADDED_LATER, ...s, tipTint: [...s.tipTint], seedTint: [...s.seedTint], patchTint: [...(s.patchTint ?? NO_PATCHES.patchTint)] }));
+  return list.map((s) => {
+    // (A preset from when a species had one flower: `bloom`, `bloomPerM2`, `bloomCover`.)
+    const { bloom, bloomPerM2, bloomCover, ...rest } = s as Species & { bloom?: string; bloomPerM2?: number; bloomCover?: number };
+    const blooms: Bloom[] = s.blooms ? s.blooms.map((b) => ({ ...b })) : bloom && (bloomPerM2 ?? 0) > 0 ? [{ flower: bloom, perM2: bloomPerM2!, cover: bloomCover ?? 0, site: 0, where: "drifts" }] : [];
+    return { ...ADDED_LATER, ...rest, blooms, tipTint: [...s.tipTint], seedTint: [...s.seedTint], patchTint: [...(s.patchTint ?? NO_PATCHES.patchTint)] };
+  });
 }
 
 /** Whether a parsed preset is a list of species this version can draw; the reason if not. */
@@ -349,6 +360,8 @@ export function checkSpecies(value: unknown): string | null {
       const want = model[key];
       // (A preset from before a setting was added has not got it: `cloneSpecies` fills it in.)
       if (key in ADDED_LATER && !(key in row)) continue;
+      // (Checked below, flower by flower.)
+      if (key === "blooms") continue;
       const got = row[key];
       if (Array.isArray(want)) {
         if (!Array.isArray(got) || got.length !== want.length || got.some((n) => typeof n !== "number" || !Number.isFinite(n))) return `species ${i}: ${key} is not ${want.length} numbers`;
@@ -359,6 +372,14 @@ export function checkSpecies(value: unknown): string | null {
     if (!(row.tip as string in TIP_CODE)) return `species ${i}: tip is not point, cut or square`;
     if (!/^#[0-9a-f]{6}$/i.test(row.color as string)) return `species ${i}: color is not a hex colour`;
     if ("textureMode" in row && row.textureMode !== "detail" && row.textureMode !== "color") return `species ${i}: textureMode is not detail or color`;
+    if ("blooms" in row) {
+      const blooms = row.blooms;
+      if (!Array.isArray(blooms) || blooms.length > MAX_BLOOMS) return `species ${i}: blooms is not a list of at most ${MAX_BLOOMS}`;
+      for (const b of blooms as Record<string, unknown>[]) {
+        if (typeof b !== "object" || b === null || typeof b.flower !== "string" || ![b.perM2, b.cover, b.site].every((n) => typeof n === "number" && Number.isFinite(n))) return `species ${i}: a bloom is not a flower's name and three numbers`;
+        if (b.where !== "drifts" && b.where !== "patches") return `species ${i}: a bloom's where is not drifts or patches`;
+      }
+    }
   }
   return null;
 }
@@ -418,18 +439,44 @@ export const TURF_SPECIES: Species[] = [
     variation: 0.3, dry: 0.02, sheen: 1,
     // (Something low and dark among it: clover, where nobody sprays.)
     patch: 0.08, patchSize: 0.66, patchTint: [0.72, 0.95, 0.72], patchTall: 0.7,
-    // (And daisies, in drifts: they come through any rough that is not sprayed, and a mower passes over them.)
-    bloom: "daisy", bloomPerM2: 26, bloomCover: 0.14,
+    // (And what flowers under a mower that passes every week or so, where nobody sprays: daisies in drifts;
+    // white clover's heads, which are where the clover is; creeping buttercup in the wet hollows; a little
+    // selfheal.)
+    blooms: [
+      { flower: "daisy", perM2: 26, cover: 0.14, site: 0.2, where: "drifts" },
+      { flower: "clover", perM2: 24, cover: 0, site: 0, where: "patches" },
+      { flower: "buttercup", perM2: 8, cover: 0.12, site: -0.8, where: "drifts" },
+      { flower: "selfheal", perM2: 10, cover: 0.06, site: 0, where: "drifts" },
+    ],
   }),
   turf("Deep rough (red fescue)", 3, { twist: 0.6,
     height: 0.125, heightSpread: 0.5, density: 1.4, width: 0.0009, widthSpread: 0.0004, tip: "point",
     splay: 1.2, droop: 1.6, stiffness: 0.25, clump: 1, disorder: 1, color: "#789b64", tipTint: [1.12, 1.12, 0.88], rootShade: 0.5,
     variation: 0.24, dry: 0.05, sheen: 0.5, edgeBlend: 0.4,
+    // (Cut a few times a year: cat's-ear on the drier banks, and ox-eye daisies.)
+    blooms: [
+      { flower: "catsear", perM2: 8, cover: 0.12, site: 0.5, where: "drifts" },
+      { flower: "oxeye", perM2: 5, cover: 0.1, site: 0, where: "drifts" },
+    ],
   }),
   turf("Fescue in seed", 4, {
     height: 0.3, heightSpread: 0.8, color: "#94a565", tipTint: [1.08, 1.08, 0.94], seedTint: [1.42, 1.38, 1.02], dry: 0.2, density: 0.38, edgeBlend: 1,
+    // (Thin, dry, unmown ground: cat's-ear most, ox-eye daisies, and a little knapweed.)
+    blooms: [
+      { flower: "catsear", perM2: 8, cover: 0.18, site: 0.6, where: "drifts" },
+      { flower: "oxeye", perM2: 6, cover: 0.15, site: 0, where: "drifts" },
+      { flower: "knapweed", perM2: 3, cover: 0.1, site: 0, where: "drifts" },
+    ],
   }),
-  turf("Hay meadow", 5, { height: 0.6, edgeBlend: 1.2, color: "#76954b" }),
+  turf("Hay meadow", 5, { height: 0.6, edgeBlend: 1.2, color: "#76954b",
+    // (Buttercups, most in the damper ground; red clover; ox-eye daisies; knapweed.)
+    blooms: [
+      { flower: "buttercup", perM2: 10, cover: 0.2, site: -0.4, where: "drifts" },
+      { flower: "redClover", perM2: 8, cover: 0.15, site: 0, where: "drifts" },
+      { flower: "oxeye", perM2: 6, cover: 0.15, site: 0.3, where: "drifts" },
+      { flower: "knapweed", perM2: 4, cover: 0.12, site: 0, where: "drifts" },
+    ],
+  }),
 ];
 
 /** Two more, for a host or a scene to put in a row of its own: a warm-season fairway and a lawn. */
@@ -444,6 +491,12 @@ export const MORE_TURF: { bermuda: Species; bluegrass: Species } = {
     splay: 0.8, droop: 0.9, stiffness: 0.85, clump: 0.3, disorder: 0.6, color: "#628061", tipTint: [1.08, 1.08, 0.96], rootShade: 0.55,
     variation: 0.18, dry: 0.01, sheen: 0.5, lay: 0.4,
     patch: 0.12, patchSize: 0.66, patchTint: [0.68, 0.94, 0.7], patchTall: 0.7,
+    // (A lawn's: daisies, the clover's heads in its patches, slender speedwell.)
+    blooms: [
+      { flower: "daisy", perM2: 20, cover: 0.12, site: 0.2, where: "drifts" },
+      { flower: "clover", perM2: 20, cover: 0, site: 0, where: "patches" },
+      { flower: "speedwell", perM2: 14, cover: 0.08, site: -0.3, where: "drifts" },
+    ],
   }),
 };
 

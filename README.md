@@ -163,22 +163,38 @@ is a separate mower at a fixed height, so its edges are steps
 
 ## Flowers
 
-A species can have a flower in it: `bloom` names one (`"daisy"`,
-`"buttercup"`, `"dandelion"`, `"clover"`, or one of the host's own, given as
-`flowers` when the grass is made), `bloomPerM2` is how many to the square
-metre where they grow, and `bloomCover` the share of the stand's ground
-they grow on, since flowers come in drifts. A `Flower` is plain data, as a
-species is: how many petals, how long and broad, how far they rise from
-flat, the centre's breadth, how tall it stands, two colours.
+A species can have up to four flowers in it (`blooms`). Each names a
+flower (`"daisy"`, `"buttercup"`, `"dandelion"`, `"clover"`,
+`"speedwell"`, `"selfheal"`, `"oxeye"`, `"redClover"`, `"catsear"`,
+`"knapweed"`, or one of the host's own, given as `flowers` when the grass is
+made) and says how many to the square metre where they grow (`perM2`), the
+share of the stand's ground they grow on (`cover`, since flowers come in
+drifts, each flower in drifts of its own), and where on the ground they
+take (`site`: creeping buttercup in the wet hollows, cat's-ear on the dry
+banks, by the lie of the ground as a species' patches go). A flower with
+`where: "patches"` grows only in the species' patches, as white clover
+flowers where the clover is. A `Flower` is plain data, as a species is:
+how many petals, how long and broad, how far they rise from flat, the
+centre's breadth, how tall it stands, two colours. Up to sixteen kinds of
+flower are drawn at once. Each is drawn as petals about a centre, which is
+what a daisy is: selfheal's spike and knapweed's knob are as near as that
+comes, and an umbel (yarrow), bells (harebell, heather), a pea flower
+(bird's-foot trefoil) or a spike of many (plantain) cannot be drawn.
 
 Within a few strides of the eye a flower is its petals, its centre and its
 stalk; from there to about nineteen metres it is a dot of its colour, and
 beyond that nothing. It nods in the wind and is lit and shaded as the
-grass about it is. `look.blooms = false` draws none. The rough in
-`TURF_SPECIES` has daisies in thin drifts.
+grass about it is. `look.blooms = false` draws none. Where each place has
+a flower, and which, is worked out once a frame in a compute pass. In
+`TURF_SPECIES` the rough has daisies, white clover, creeping buttercup and
+selfheal; the deep rough cat's-ear and ox-eye daisies; the fescue
+cat's-ear, ox-eye daisies and knapweed; the meadow buttercups, red clover,
+ox-eye daisies and knapweed. Which grow where is from the floras; how many
+was set by eye.
 
 Not done: a ball or a foot does not flatten or hide a flower, flowers cast
-no shadow, and a daisy's thirty-odd rays are drawn as sixteen.
+no shadow, nothing flowers by the season (a host that has a date can
+change `blooms`), and a daisy's thirty-odd rays are drawn as sixteen.
 
 The way a head is built, each petal a small curved surface with nearer
 and further drawings of it, follows

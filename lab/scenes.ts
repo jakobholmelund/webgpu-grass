@@ -187,11 +187,17 @@ export const SCENES: Scene[] = [
     sun: [130, 24], wind: [200, 4],
   },
   {
-    id: "daisies",
-    title: "Daisies in the rough",
-    blurb: "The rough's own flower, here thick on the ground (it comes in thin drifts as the rough is made): petals within a few strides of the eye, dots of their colour beyond.",
+    id: "flowers-in-the-rough",
+    title: "Flowers in the rough",
+    blurb: "The rough's four, here thick on the ground (they come in thin drifts as the rough is made): daisies, white clover where the clover is, creeping buttercup down in the hollows, selfheal. Petals within a few strides of the eye, dots of their colour beyond.",
     species: turf((list) => {
-      Object.assign(list[ROUGH], { bloomCover: 0.75, bloomPerM2: 30 });
+      list[ROUGH].patch = 0.3;
+      list[ROUGH].blooms = [
+        { flower: "daisy", perM2: 22, cover: 0.5, site: 0.2, where: "drifts" },
+        { flower: "clover", perM2: 26, cover: 0, site: 0, where: "patches" },
+        { flower: "buttercup", perM2: 12, cover: 0.45, site: -0.8, where: "drifts" },
+        { flower: "selfheal", perM2: 12, cover: 0.35, site: 0, where: "drifts" },
+      ];
     }),
     plot: ROUGH, row: ROUGH,
     view: { x: 14, z: -6, eye: 0.32, yaw: -0.9, pitch: -0.36, fov: 42 },
