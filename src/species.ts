@@ -396,11 +396,13 @@ const turf = (name: string, from: number, set: Partial<Species>): Species => ({ 
 
 /**
  * A golf course's surfaces, short to tall, as eight named stands: the green, its collar, the fairway, the
- * first cut, the rough, deep rough, and two that nobody mows. (A mown grass's leaves are narrower than
- * the same grass's left to grow: a rye leaf is 2 to 4 mm in the books and about 2 mm in a fairway.) The heights are heights of cut in use (see
- * the README for where each comes from); the leaf widths are the species' own, from turf references
- * (bent and fine fescue under a millimetre, rye 2 to 4). The habit was set by eye: a likeness, not a
- * measurement.
+ * first cut, the rough, deep rough, and two that nobody mows. The heights are heights of cut in use (see
+ * the README for where each comes from). The leaf widths are set against the floras' (README, "Where
+ * the numbers come from"): a leaf grown out, creeping bent 0.5 to 5 mm, perennial rye 2 to 4, Kentucky
+ * bluegrass 1.7 to 5, red fescue 0.4 to 0.9 folded (Flora of Australia; Hitchcock has bent 1 to 8). A
+ * mown grass's leaves are at the narrow end of its range, and narrower than the same grass left to grow,
+ * so the mown ones here are: a rye leaf in a fairway is about 2 mm. The habit was set by eye: a likeness,
+ * not a measurement.
  *
  * The colours are a leaf's, worked out: what a leaf with so much chlorophyll sends back of sun and sky
  * (PROSPECT-D, Feret et al. 2017), as linear sRGB, all at one brightness (2.2 times the leaf's own, which
@@ -451,7 +453,7 @@ export const TURF_SPECIES: Species[] = [
     // buttercup and selfheal flower under a mower that passes every week or so: see `MORE_TURF.bluegrass`.)
   }),
   turf("Deep rough (red fescue)", 3, { twist: 0.6,
-    height: 0.125, heightSpread: 0.5, density: 1.4, width: 0.0009, widthSpread: 0.0004, tip: "point",
+    height: 0.125, heightSpread: 0.5, density: 1.4, width: 0.0006, widthSpread: 0.0003, tip: "point",
     splay: 1.2, droop: 1.6, stiffness: 0.25, clump: 1, disorder: 1, color: "#789b64", tipTint: [1.12, 1.12, 0.88], rootShade: 0.5,
     variation: 0.24, dry: 0.05, sheen: 0.5, edgeBlend: 0.4,
     // (Cut a few times a year: cat's-ear and bird's-foot trefoil on the drier banks, ox-eye daisies, and
@@ -464,7 +466,11 @@ export const TURF_SPECIES: Species[] = [
     ],
   }),
   turf("Fescue in seed", 4, {
-    height: 0.3, heightSpread: 0.8, color: "#94a565", tipTint: [1.08, 1.08, 0.94], seedTint: [1.42, 1.38, 1.02], dry: 0.2, density: 0.38, edgeBlend: 1,
+    height: 0.3, heightSpread: 0.8, color: "#94a565", tipTint: [1.08, 1.08, 0.94], seedTint: [1.42, 1.38, 1.02], dry: 0.2, density: 0.75, edgeBlend: 1,
+    // (A fine fescue's leaf, folded: 0.4 to 0.9 mm across, as the floras have red fescue's, and a stand of it
+    // dense with them. Its culms in seed are 25 to 104 cm in Flora of Australia; the rough a course leaves
+    // stands lower, as the README says.)
+    width: 0.0006, widthSpread: 0.0003,
     // (Thin, dry, unmown ground: cat's-ear most, ox-eye daisies, harebells, yarrow.)
     blooms: [
       { flower: "catsear", perM2: 8, cover: 0.18, site: 0.6, where: "drifts" },
@@ -509,8 +515,8 @@ export const MORE_TURF: { bermuda: Species; bluegrass: Species } = {
  * What grows beside grass and is not one, for a host or a scene to put in a row of its own.
  *
  * Soft rush (Juncus effusus), a marsh's and a wet ditch's plant: no leaves, only round, smooth, glossy
- * stems, 2 to 4 mm thick at the foot and tapering to a point, 30 cm to over a metre tall, stiff and nearly
- * straight, standing in dense tussocks that fan out from their middles, with the last years' dead stems
+ * stems, 2 to 4 mm thick at the foot and tapering to a point, 30 cm to over a metre tall (Flora Iberica: stems
+ * 1 to 5 mm across, plants 25 to 128 cm), stiff and nearly straight, standing in dense tussocks that fan out from their middles, with the last years' dead stems
  * straw-brown among the green (the floras: Stace; Clapham, Tutin and Moore). Its colour is a guess at a
  * dark leaf's (65 ug of chlorophyll to the square centimetre): nobody has published a rush's. Its flowers
  * are a brown tuft that sits on the side of a stem a hand below its tip, on a third of its stems.
@@ -526,6 +532,11 @@ export const MORE_PLANTS: { rush: Species } = {
 /**
  * Grasses of other courses than the cool, wet parkland `TURF_SPECIES` are: a green gone over to annual
  * meadow-grass, a warm coast's kikuyu, a links' fine fescue, and the dunes' marram.
+ *
+ * Their leaves are set against the floras (README, "Where the numbers come from"): annual meadow-grass 1
+ * to 5 mm grown out (Flora of Australia; Hitchcock 1 to 3), kikuyu 2 to 8 (Flora Iberica; 2 to 3.5 in
+ * Thailand), red fescue 0.4 to 0.9 folded, marram 1.5 to 4 rolled and 50 to 120 cm tall (Flora Iberica;
+ * Hitchcock 70 to 100 cm).
  *
  * Annual meadow-grass (Poa annua) takes over most old greens on wet or mild coasts (California's
  * public courses, Pebble Beach, much of the Pacific north-west): a lighter, yellower green than bent

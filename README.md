@@ -131,6 +131,25 @@ the share of a species' stems in seed, which then stand a fifth over the
 leaves) and stands in tussocks further apart than the field's clumps
 (`clumpScale`, a multiple of `look.clumpSize`), with open ground between.
 
+## Where the numbers come from
+
+A species' leaf breadth and, for the grass nobody mows, its height are set
+against these floras, which can be read and reused freely:
+
+| Source | What | Terms |
+| --- | --- | --- |
+| [Flora of Australia](https://profiles.ala.org.au/opus/foa) | The turf grasses as they grow wild there: creeping bent, perennial rye, Kentucky bluegrass, annual meadow-grass, red fescue, bermuda; JSON for each | CC BY, © Commonwealth of Australia |
+| A. S. Hitchcock, *Manual of the Grasses of the United States*, 2nd ed. (USDA, 1950), [Internet Archive](https://archive.org/details/manualofgrasseso200hitc_0) | Creeping bent, annual meadow-grass, American and European beachgrass | Public domain (a US government work) |
+| *Flora Iberica* XVII and XIX(II), through [Plazi](https://tb.plazi.org) | Marram, kikuyu, soft rush | Plazi publishes its treatments as CC0 |
+| Wessapak et al., Cenchrus in Thailand, *PhytoKeys* 234 (2023) | Kikuyu | CC BY |
+
+Each species' note in `species.ts` gives the figures it was set against.
+A mown grass is drawn at the narrow end of its range, as a mown leaf is.
+The floras give no petal counts or flower sizes in a form that can be
+reused, so the flowers' are from the floras' prose (Stace; Clapham, Tutin
+and Moore). How a leaf leans, droops and twists is not measured anywhere
+here: it was set by eye.
+
 ## Where its light and wind come from
 
 - **Light lost in the stand.** Roots are as dark as exp(-K L) makes them
