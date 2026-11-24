@@ -205,6 +205,14 @@ const PLANT_LEAVES = 3;
  */
 /** A stand this tall (m) begins to be drawn as tufts where its leaves are too thin to be seen; one two and a half times it, wholly. */
 const TUFTS_FOR_UNSEEN_FROM_M = 0.15;
+/**
+ * An unmown stand (its leaves grown to points) this tall (m) is drawn as tufts where its leaves are too thin
+ * to be seen, wholly from twice it: its uneven tips and tussocks are seen as a texture long after a single
+ * leaf is not, where a mown sward is level and its ground carries it. (Unmown fescue at 10 cm, as a course's
+ * native ground is, had nothing drawn on it between the last leaves a couple of strides off and the far
+ * tufts.)
+ */
+const UNMOWN_TUFTS_FROM_M = 0.04;
 const TUSSOCK_WIDEST = 0.42;
 const TUSSOCK_SMALLEST = 0.06;
 /** A stem (`Species.stem`): how much of its thickness is left at its tip's foot, and how much darker its edges are than its middle, being turned away. */
@@ -337,6 +345,23 @@ const STRAW = new THREE.Color("#b9ac80");
 const FOLD_ANGLE = 0.5;
 /** A tuft's blade is this many times as broad as a fine leaf of its species: it stands for several. */
 const TUFT_BROAD = 3.1;
+/**
+ * But never narrower than this (m): a tuft of a fine-leaved grass stands for more of its leaves, it having
+ * more of them to the square metre, not for a narrower strand. (At three of its own leaves, 0.6 mm fescue's
+ * tufts were hairs, a quarter of a rye rough's, and a hillside of it was its bare ground.)
+ */
+const TUFT_LEAST_M = 0.0055;
+/**
+ * The most a tuft is broadened for those thinned out about it (`tuftKept`): so far, and a tuft left alone
+ * still covers its share of the ground; further, and it is a fan, not grass.
+ */
+const TUFT_WIDEN_MOST = 3;
+/**
+ * Over this part of their range (shares of it) the far tufts take the ground's flat colour and the ground
+ * takes the stand's mean for them (`toGround`, `ground`): the two together, or tufts still drawn stand on
+ * ground already as light as they are, and a stand of long grass a dozen strides off is a flat colour.
+ */
+const TUFTS_TO_GROUND: readonly [number, number] = [0.55, 0.95];
 /** How many pictures the leaves can have between them, and the size each is kept at (across the leaf, up it). */
 export const MAX_LEAF_TEXTURES = 16;
 const LEAF_TEXTURE_W = 64;
@@ -876,6 +901,16 @@ export function createGrass(options: GrassOptions): Grass {
   const ranks = rankStore();
   /** The share of a square's plants kept for the eye's height over the ground: `HEIGHT_THIN_FROM_M`. */
   const heightShare = (): THREE.Node<"float"> => clamp(pow(float(HEIGHT_THIN_FROM_M).div(max(uEyeUp, float(HEIGHT_THIN_FROM_M))), float(2)), float(HEIGHT_THIN_LEAST), float(1));
+  /**
+   * The share of a tuft square's plants kept at `dist` m from the eye, for the eye's sake (not its species'):
+   * fewer further off, and fewer from high up. Those kept are drawn as much broader (to `TUFT_WIDEN_MOST`),
+   * so a stand covers its ground as far as it is drawn: thinned and not broadened, a hillside of long grass
+   * twenty metres off was its bare ground with a tuft to every square metre or two.
+   */
+  const tuftKept = (dist: THREE.Node<"float">, range: number): THREE.Node<"float"> =>
+    float(1).sub(smoothstep(float(range * 0.3), float(range * 0.8), dist).mul(0.55))
+      .mul(mix(float(1.0), float(0.45), smoothstep(float(18), float(38), dist)))
+      .mul(heightShare());
   /** shadow, occlusion. */
   const uShade = uniform(new THREE.Vector2(0.6, 0.45));
   /** depth: how far the roots' shade follows the light's fall through the stand (0: the species' own `rootShade`). */
@@ -1305,7 +1340,7 @@ export function createGrass(options: GrassOptions): Grass {
     // shade: as dark as the leaves' roots. Far off it stands in for the whole
     // stand, where the tufts have taken its colour and stopped (see `toGround`).
     // (By the eye's whole distance, height and all: from far overhead the ground under the eye is far too.)
-    const farOff = smoothstep(float(layers.far.range * 0.22), float(layers.far.range * 0.6), length(vec3(xz.x.sub(uCamPos.x), uEyeUp, xz.y.sub(uCamPos.z))));
+    const farOff = smoothstep(float(layers.far.range * TUFTS_TO_GROUND[0]), float(layers.far.range * TUFTS_TO_GROUND[1]), length(vec3(xz.x.sub(uCamPos.x), uEyeUp, xz.y.sub(uCamPos.z))));
     // Where the leaves stand the ground is what shows between them; where they have thinned out it stands
     // in for them. So it goes from the one to the other exactly as the leaves go: by how many of them
     // are left here (`leavesLeft`), for a species the far tufts do not take over from, and by the
@@ -1571,7 +1606,7 @@ export function createGrass(options: GrassOptions): Grass {
       ? leafWidth.mul(fine ? 1 : TUFT_BROAD)
       : fine
         ? min(seen.mul(float(1).add(sh.y)), max(seen, pixel.mul(1.75)))
-        : leafWidth.mul(TUFT_BROAD).mul(mix(float(0.55), float(1), clamp(dist.div(uLeafReach), float(0), float(1)))).mul(float(1).add(dist.mul(0.09))).mul(mix(float(1.0), float(1.48), smoothstep(float(18), float(38), dist))).div(heightShare().sqrt());
+        : max(leafWidth.mul(TUFT_BROAD), float(TUFT_LEAST_M)).mul(mix(float(0.55), float(1), clamp(dist.div(uLeafReach), float(0), float(1)))).mul(float(1).add(dist.mul(0.09))).mul(min(float(1).div(tuftKept(dist, o.range)), float(TUFT_WIDEN_MOST)));
     // No two leaves of a plant the same height.
     const rh = hashCell(hcell.add(b.mul(3.1).add(17.0)));
     // A mown leaf is not as long as the grass is tall: it grew to its own length, some well past the
@@ -1640,8 +1675,9 @@ export function createGrass(options: GrassOptions): Grass {
     const rootShade = mix(rootIs, float(1), flat.mul(0.7));
     const V = normalize(cameraPosition.sub(worldPos));
     // Towards the end of their range the tufts take the ground's own flat
-    // colour, root to tip, so where they stop there is nothing to see stop.
-    const toGround = fine || !o.field ? float(0) : smoothstep(float(o.range * 0.22), float(o.range * 0.6), dist);
+    // colour, root to tip, so where they stop there is nothing to see stop. (Only as they end: taking it
+    // from a quarter of the way out, a stand of long grass a dozen strides off was a flat colour.)
+    const toGround = fine || !o.field ? float(0) : smoothstep(float(o.range * TUFTS_TO_GROUND[0]), float(o.range * TUFTS_TO_GROUND[1]), dist);
 
     let leafCol: Vec3;
     if (fine) {
@@ -1918,10 +1954,7 @@ export function createGrass(options: GrassOptions): Grass {
         // (Kept by the cell's rank, not a coin of its own: whatever the share, those kept are evenly spread. A
         // tuft square keeps fewer further off, and fewer still from high up; those left are drawn broader.)
         const rank = ranks.rankOf(cell);
-        const tuftShare = float(1).sub(smoothstep(float(L.range * 0.3), float(L.range * 0.8), dist).mul(0.55))
-          .mul(min(density, float(1)))
-          .mul(mix(float(1.0), float(0.45), smoothstep(float(18), float(38), dist)))
-          .mul(heightShare());
+        const tuftShare = tuftKept(dist, L.range).mul(min(density, float(1)));
         const thin = step(rank, fine ? keepShare : tuftShare);
 
         // A fine leaf stands on its root, so it grows right up to the border: every place is one species'
@@ -1943,7 +1976,9 @@ export function createGrass(options: GrassOptions): Grass {
         // from above is nearer than the leaves' reach. Short grass there is its ground's colour and nothing
         // is missed, but a stand to the knee is a shape, and without it there is bare ground between the
         // last leaves and the first tufts.)
-        const leavesUnseen = fine ? float(0) : float(1).sub(leavesLeft(xz, row(k, 1).x.add(row(k, 1).y.mul(0.5)))).mul(smoothstep(float(TUFTS_FOR_UNSEEN_FROM_M), float(TUFTS_FOR_UNSEEN_FROM_M * 2.5), tall0));
+        const unmown = float(1).sub(step(float(0.5), row(k, 2).x));
+        const tuftsForUnseen = max(smoothstep(float(TUFTS_FOR_UNSEEN_FROM_M), float(TUFTS_FOR_UNSEEN_FROM_M * 2.5), tall0), unmown.mul(smoothstep(float(UNMOWN_TUFTS_FROM_M), float(UNMOWN_TUFTS_FROM_M * 2), tall0)));
+        const leavesUnseen = fine ? float(0) : float(1).sub(leavesLeft(xz, row(k, 1).x.add(row(k, 1).y.mul(0.5)))).mul(tuftsForUnseen);
         const layerOn = fine ? float(1) : tufted.mul(max(smoothstep(uLeafReach.mul(0.45), uLeafReach, dist), leavesUnseen)).mul(smoothstep(float(0.9), float(1.5), dist));
         const grow = alive.mul(rooted).mul(rangeFade).mul(thin).mul(layerOn);
 

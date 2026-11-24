@@ -395,6 +395,16 @@ the fields made for you.
   grass. It is chosen by the broadest species in the table, not by what
   grows in view, and beyond 18 m the leaves end whatever the display.
   `grass.countDrawn` says how many plants a frame drew.
+- **The far tufts.** Beyond its leaves a tufted stand is drawn as tufts
+  (`layers.far`, to 48 m), and an unmown one from 4 cm tall also where
+  its own leaves are too thin to be seen nearer. A tuft is eight broad
+  blades standing for a bunch of leaves: three of its species' leaves
+  broad, and never narrower than 5.5 mm, so a fine fescue's tufts stand
+  for its many leaves by breadth, not by number. That is coarser than the
+  stand it stands for; fewer are kept further off and from higher up, each
+  broadened for those left out (to three times); and over the last part of
+  their range they take the ground's flat colour as the ground takes the
+  stand's. From high overhead a stand of them shows as small stars.
 - **Rushes, brush.** Left in the game.
 - **Thin leaves on a see-through canvas.** A leaf thinner than a pixel is
   drawn a pixel wide and that much see-through (alpha to coverage, where
