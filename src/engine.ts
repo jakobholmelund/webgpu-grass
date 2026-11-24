@@ -3079,7 +3079,9 @@ export function createGrass(options: GrassOptions): Grass {
       // (Drawn when the species or the map have changed, and every ten seconds or so besides, for a host whose map
       // changes without saying. It was drawn every twentieth frame, which on a still hole is work for nothing.)
       frame++;
-      if (canopyTarget && canopyQuad && (canopyDirty > 0 || frame % 600 === 0)) {
+      // (In its first ten seconds or so, every twentieth frame as before: a host's map textures may arrive a moment
+      // after the grass is made.)
+      if (canopyTarget && canopyQuad && (canopyDirty > 0 || frame % (frame < 600 ? 20 : 600) === 0)) {
         canopyDirty = Math.max(0, canopyDirty - 1);
         const before = renderer.getRenderTarget();
         renderer.setRenderTarget(canopyTarget);
