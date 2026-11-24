@@ -255,7 +255,17 @@ grass is laid over along the track as the thing passes and is back up in
 about a second, since dry grass keeps no track. Wet grass (`look.wet`, 0 to
 1) is slower up and its leaves along the track are a little darker for some
 minutes: a faint line, on the leaves only. A dew track as a green shows it
-(dark through pale) is not drawn yet. `grass.setStir({ x, z, dx, dz })` is a
+(dark through pale) is not drawn yet.
+
+The grass remembers what went through it: a grid of 4 cm cells over the 30 m
+about the eye, wrapping round as the eye moves (after bevy-grass's trample
+buffer). Each frame one pass fades every cell at the grass's own pace and
+stamps in the trail and anything standing on the grass (`flat`), so a track
+and a footprint stay after the points and the foot are gone: crushed and
+laid over until the grass is back up, wiped of its wet for some minutes. A
+plant reads four cells, however many things went through; the pass costs
+about 0.15 ms a frame. A track further than 15 m or so from the eye is let
+go. `grass.setStir({ x, z, dx, dz })` is a
 stir of the air at a place, a club swung through: the grass within a
 stride is pushed out and along.
 
@@ -329,9 +339,10 @@ the fields made for you.
   distance fields) still wants a source of its own.
 - **Height across a border.** Each stand is full height up to its line; the
   game raises rough out of semi-rough over a stride.
-- **Things in the grass.** A ball, feet and a trail press it (see "Things
-  in the grass"), but nothing in it casts a shadow on it, and a dew track,
-  dark through pale, is not drawn.
+- **Things in the grass.** A ball, feet and a trail press it, and the grass
+  remembers them (see "Things in the grass"), but nothing in it casts a
+  shadow on it, and a dew track, dark through pale, is not drawn: the grid
+  is where its wiped dew is kept, and the dew itself is the host's to draw.
 - **Mowing beyond straight passes.** `mowStripes` is passes side by side,
   there and back. A species says how far the mower lays it over
   (`Species.lay`); laid grass leans that way, and it and the ground under it

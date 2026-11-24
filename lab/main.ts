@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b69";
+const LAB_BUILD = "b70";
 const query = new URLSearchParams(location.search);
 /** The most species a scene of the lab's has. */
 const LAB_ROWS = 11;
@@ -53,6 +53,12 @@ async function start() {
   } catch (err) {
     fail(`WebGPU could not be started here: ${err instanceof Error ? err.message : String(err)}`);
   }
+  // (For checking by script: the card's first few complaints, which come before a flood of their echoes.)
+  const gpuErrors: string[] = [];
+  (window as unknown as Record<string, unknown>).__gpuErrors = gpuErrors;
+  (renderer.backend as unknown as { device?: GPUDevice }).device?.addEventListener("uncapturederror", (e) => {
+    if (gpuErrors.length < 5) gpuErrors.push((e as GPUUncapturedErrorEvent).error.message);
+  });
   if (!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) fail("This page needs WebGPU; only WebGL is available here.");
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 

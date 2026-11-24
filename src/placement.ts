@@ -4,7 +4,7 @@
 // rank.ts (`checkPlacement`).
 
 import * as THREE from "three/webgpu";
-import { Fn, dot, float, floor, fract, instanceIndex, int, mod, storage, uniform, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, dot, float, floor, fract, instanceIndex, int, mod, storage, uniform, uniformArray, vec2, vec3, vec4 } from "three/tsl";
 import { RANK_SIDE, grassRanks } from "./rank";
 
 type Vec2 = THREE.Node<"vec2">;
@@ -17,19 +17,24 @@ export const hashCell = Fn(([pIn]: [Vec2]) => {
   return fract(p3.x.add(p3.y).mul(p3.z));
 });
 
-/** The rank matrix (rank.ts `grassRanks`) where the shaders read it. One to a grass. */
+/**
+ * The rank matrix (rank.ts `grassRanks`) where the shaders read it, four ranks to an entry of a uniform
+ * array (16 KB): not a storage buffer, of which a shader stage is sure of only eight. One to a grass.
+ */
 export function rankStore() {
-  const attr = new THREE.StorageBufferAttribute(grassRanks(), 1);
-  const node = storage(attr, "float", RANK_SIDE * RANK_SIDE).toReadOnly();
+  const r = grassRanks();
+  const packed = Array.from({ length: r.length / 4 }, (_, i) => new THREE.Vector4(r[i * 4], r[i * 4 + 1], r[i * 4 + 2], r[i * 4 + 3]));
+  const node = uniformArray(packed, "vec4");
   return {
     /** A cell's rank, 0..1 (cells counted from anywhere, below nothing too). (Its twin: `rankOf`.) */
     rankOf(cell: Vec2): Float {
       const at = cell.sub(floor(cell.div(RANK_SIDE)).mul(RANK_SIDE));
-      return node.element(int(at.y).mul(RANK_SIDE).add(int(at.x))) as unknown as Float;
+      const i = at.y.mul(RANK_SIDE).add(at.x);
+      const four = node.element(int(floor(i.div(4)))) as unknown as THREE.Node<"vec4">;
+      const which = i.sub(floor(i.div(4)).mul(4));
+      return which.lessThan(0.5).select(four.x, which.lessThan(1.5).select(four.y, which.lessThan(2.5).select(four.z, four.w))) as unknown as Float;
     },
-    dispose() {
-      attr.array = new Float32Array(1);
-    },
+    dispose() {},
   };
 }
 

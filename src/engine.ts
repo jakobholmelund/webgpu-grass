@@ -71,6 +71,14 @@ const TRAIL_UP_WET_S = 3.5;
 const TRAIL_WIPED_S = 240;
 const TRAIL_WIPED_TINT = 0.8;
 const TRAIL_TALL = 0.5;
+/** How crushed grass is under a foot (`flat`), as a share of a trail's crush, and in its print after. */
+const FOOT_CRUSH = 0.8;
+/**
+ * The grid that keeps what went through the grass (`createGrass`, "The grass's memory"): its cells
+ * across (m) and how many a side. 30 m about the eye: a track further off than that is let go.
+ */
+const TRACK_CELL_M = 0.04;
+const TRACK_SIDE = 768;
 /** How far over the grass in a track is laid, the way the thing went (as a lean: 1 is nearly flat). */
 const TRAIL_LAY = 0.85;
 /** A stir of the air moves the grass within this far (m) of it. */
@@ -477,7 +485,8 @@ export interface Grass {
    * about a second: dry grass keeps no track. Wet grass (`look.wet`) is slower up, and its leaves along
    * the track are a little darker for some minutes, the wet wiped off them. (A faint line, and on the
    * leaves only: a dew track as it is seen on a green, dark through pale, wants the dew drawn and the
-   * ground under the leaves to carry the line, and neither is done.) None, to clear it.
+   * ground under the leaves to carry the line, and neither is done.) The grass remembers the track after
+   * its points are gone, within 15 m or so of the eye. None, to clear it (what it left stays, and fades).
    */
   setTrail(points: readonly { x: number; z: number; radius: number; at: number }[]): void;
   /** A stir of the air at a place: the grass within a stride of it is pushed out from it and along (`dx`, `dz`: which way, and how hard, 1 being a club's swing). None, for still. */
@@ -604,13 +613,43 @@ export function createGrass(options: GrassOptions): Grass {
   /** How wet the leaves are, 0 dry to 1 (`look.wet`). */
   const uWet = uniform(0);
   const uStir = uniform(new THREE.Vector4());
+  // The grass's memory of what has been through it (after bevy-grass's trample buffer): a grid of cells
+  // `TRACK_CELL_M` across, `TRACK_SIDE` a side, over the ground about the eye, wrapping round, so a cell
+  // stands for whichever place of the world under it is nearest the eye and is cleared when that changes.
+  // Each cell keeps how far the grass there is pushed over (x, z), how crushed it is (0..1), and how much
+  // of its wet was wiped off (0..1). Each frame a pass fades every cell, at the grass's own pace, and
+  // stamps in what is going through it now: the trail (`setTrail`) and anything that stands on the grass
+  // (`setThings`, `flat`). A plant reads its four cells, however many things went through.
+  const trackCount = TRACK_SIDE * TRACK_SIDE;
+  // (Two entries to a cell, its numbers and then which place it is of (x), in one buffer: a shader stage is
+  // sure of only eight storage buffers, and the plants' pass has six of its own.)
+  const trackData = new Float32Array(trackCount * 8);
+  for (let i = 0; i < trackCount; i++) trackData[i * 8 + 4] = -1;
+  const trackAttr = new THREE.StorageBufferAttribute(trackData, 4);
+  const trackStore = storage(trackAttr, "vec4", trackCount * 2);
+  const cellOf = (slot: Int) => trackStore.element(slot.mul(2)) as unknown as Vec4;
+  const keyOf = (slot: Int) => (trackStore.element(slot.mul(2).add(1)) as unknown as Vec4).x;
+  /** The window's first cell (in cells, whole): `TRACK_SIDE` cells either way from there are kept. */
+  const uTrackOrigin = uniform(new THREE.Vector2());
+  /** What a cell keeps from one frame to the next: of its crush and push (x), and of its wiped wet (y). */
+  const uTrackFade = uniform(new THREE.Vector2(1, 1));
+  /** Where anything is stamped in this frame (m): least x, z, most x, z. None: least past most. */
+  const uTrackBox = uniform(new THREE.Vector4(1, 1, 0, 0));
+  /** Which stretch of the world a cell is of, as a number: the same cell of the window may be another. */
+  const trackKey = (cell: Vec2): THREE.Node<"float"> => floor(cell.x.div(TRACK_SIDE)).add(1024).mul(4096).add(floor(cell.y.div(TRACK_SIDE)).add(1024));
+  const trackSlot = (cell: Vec2): Int => {
+    const s = cell.sub(floor(cell.div(TRACK_SIDE)).mul(TRACK_SIDE));
+    return int(s.y).mul(TRACK_SIDE).add(int(s.x));
+  };
   /**
-   * What a plant rooted at `xz` has of the trail and the stir: which way it is pushed over (x, y), and
-   * what is left of its height (z). Grass a thing went through is crushed along its track and pushed
-   * out to either side, and comes back up over a quarter of a minute; a stir pushes it out and along.
+   * What is going through the grass at a place now: how far it pushes it over (x, y), how crushed it is
+   * (z, 0..1) and how much of its wet is wiped (w, 0..1). The trail: grass a thing went through is
+   * crushed along its track, laid over the way it went and pushed out to either side, and springs back
+   * by the time it is `TRAIL_UP_*_S` old; the wet wiped off it is kept `TRAIL_WIPED_S`. Something
+   * standing on the grass crushes it to a footprint and wipes its wet.
    */
-  const pressedAt = (xz: Vec2): Vec4 => {
-    const tall = float(1).toVar();
+  const goingThrough = (xz: Vec2): Vec4 => {
+    const crushed = float(0).toVar();
     const push = vec2(0, 0).toVar();
     const wiped = float(0).toVar();
     const upAfter = mix(float(TRAIL_UP_DRY_S), float(TRAIL_UP_WET_S), uWet);
@@ -637,16 +676,68 @@ export function createGrass(options: GrassOptions): Grass {
         // the laid leaves, showing their sides to the light, that make a track seen; leaves a third shorter
         // in a lane a hand wide are not.)
         push.addAssign(along.div(max(pow(span, float(0.5)), float(1e-4))).mul(crush).mul(TRAIL_LAY).mul(step(span, float(TRAIL_GAP_M * TRAIL_GAP_M))));
-        tall.assign(min(tall, mix(float(1), float(TRAIL_TALL), crush)));
+        crushed.assign(max(crushed, crush));
       });
     });
+    // (A foot: a place something stands on, `flat`. Its print is crushed and its wet wiped.)
+    for (let i = 0; i < MAX_THINGS; i++) {
+      const r = thingHow[i].z;
+      const d = length(xz.sub(vec2(thingAt[i].x, thingAt[i].z)));
+      const print = float(1).sub(smoothstep(r.mul(0.7), r.mul(1.1), d)).mul(step(float(1e-4), r));
+      crushed.assign(max(crushed, print.mul(FOOT_CRUSH)));
+      wiped.assign(max(wiped, print));
+    }
+    return vec4(push.x, push.y, crushed, wiped);
+  };
+  /** The pass that fades the grid and stamps in what is going through it (see above). */
+  const trackPass = Fn(() => {
+    const slot = float(instanceIndex);
+    const inWindow = vec2(mod(slot, float(TRACK_SIDE)), floor(slot.div(TRACK_SIDE)));
+    // (The place of the world this cell is now: the one in the window about the eye.)
+    const cell = uTrackOrigin.add(mod(inWindow.sub(uTrackOrigin), float(TRACK_SIDE)));
+    const key = trackKey(cell);
+    const here = int(instanceIndex);
+    const was = cellOf(here);
+    const same = keyOf(here).equal(key);
+    const kept = same.select(was.mul(vec4(uTrackFade.x, uTrackFade.x, uTrackFade.x, uTrackFade.y)), vec4(0, 0, 0, 0)).toVar();
+    const xz = cell.add(0.5).mul(TRACK_CELL_M);
+    If(xz.x.greaterThanEqual(uTrackBox.x).and(xz.y.greaterThanEqual(uTrackBox.y)).and(xz.x.lessThanEqual(uTrackBox.z)).and(xz.y.lessThanEqual(uTrackBox.w)), () => {
+      const now = goingThrough(xz);
+      // (The more crushed of what was and what is now, with its push; the more wiped.)
+      const newer = now.z.greaterThan(kept.z);
+      kept.assign(vec4(newer.select(now.x, kept.x), newer.select(now.y, kept.y), max(now.z, kept.z), max(now.w, kept.w)));
+    });
+    trackStore.element(here.mul(2)).assign(kept);
+    trackStore.element(here.mul(2).add(1)).assign(vec4(key, 0, 0, 0));
+  })().compute(trackCount);
+  /** What the grid keeps at a place, between its four nearest cells; nothing where it keeps another place. */
+  const trackAt = (xz: Vec2): Vec4 => {
+    const c = xz.div(TRACK_CELL_M).sub(0.5);
+    const c0 = floor(c);
+    const t = c.sub(c0);
+    const at = (dx: number, dz: number) => {
+      const cell = c0.add(vec2(dx, dz));
+      const slot = trackSlot(cell);
+      const same = keyOf(slot).equal(trackKey(cell));
+      return same.select(cellOf(slot), vec4(0, 0, 0, 0));
+    };
+    return mix(mix(at(0, 0), at(1, 0), t.x), mix(at(0, 1), at(1, 1), t.x), t.y);
+  };
+  /**
+   * What a plant rooted at `xz` has of what went through the grass and the stir: which way it is pushed
+   * over (x, y), what is left of its height (z) and how much of its wet was wiped off (w, in grass as wet
+   * as `look.wet`). The stir pushes it out from where the air was stirred and along.
+   */
+  const pressedAt = (xz: Vec2): Vec4 => {
+    const kept = trackAt(xz);
+    const push = vec2(kept.x, kept.y).toVar();
     const way = vec2(uStir.z, uStir.w);
     const hard = length(way);
     const from = xz.sub(vec2(uStir.x, uStir.y));
     const away = length(from);
     const out = normalize(from.div(max(away, float(1e-4))).add(way.div(max(hard, float(1e-4))).mul(1.15)));
     push.addAssign(out.mul(float(1).sub(smoothstep(float(0.05), float(STIR_REACH_M), away)).mul(min(hard, float(1.25))).mul(step(float(0.01), hard)).mul(0.25)));
-    return vec4(push.x, push.y, tall, wiped.mul(uWet));
+    return vec4(push.x, push.y, mix(float(1), float(TRAIL_TALL), kept.z), kept.w.mul(uWet));
   };
   /** How tall a plant rooted at `xz` (its ground at `gy`) stands among the things in the grass: `tall`, less whatever they take. `luck` 0..1 is the plant's own. */
   const amongThings = (tall: THREE.Node<"float">, xz: Vec2, gy: THREE.Node<"float">, luck: THREE.Node<"float">): THREE.Node<"float"> => {
@@ -2597,6 +2688,29 @@ export function createGrass(options: GrassOptions): Grass {
       const ph = uPhase.value;
       ph.set(turn(ph.x, 1.3 + 0.22 * w.z), turn(ph.y, 2.1 + 0.2 * w.z), turn(ph.z, 2.3), turn(ph.w, 1.2));
       uTime.value = timeS;
+      // The grass's memory: its window about the eye, what each cell keeps of the last frame, and where
+      // anything can be stamped in this one.
+      uTrackOrigin.value.set(Math.floor(eye.x / TRACK_CELL_M) - TRACK_SIDE / 2, Math.floor(eye.z / TRACK_CELL_M) - TRACK_SIDE / 2);
+      const wetNow = Math.min(1, Math.max(0, look.wet));
+      const upAfterS = TRAIL_UP_DRY_S + (TRAIL_UP_WET_S - TRAIL_UP_DRY_S) * wetNow;
+      // (Mostly back by `upAfterS`, as the trail's own spring is; the wiped wet over `TRAIL_WIPED_S`.)
+      uTrackFade.value.set(Math.exp((-3 * dt) / upAfterS), Math.exp((-3 * dt) / TRAIL_WIPED_S));
+      const box = [Infinity, Infinity, -Infinity, -Infinity];
+      const take = (x: number, z: number, r: number) => {
+        box[0] = Math.min(box[0], x - r);
+        box[1] = Math.min(box[1], z - r);
+        box[2] = Math.max(box[2], x + r);
+        box[3] = Math.max(box[3], z + r);
+      };
+      const n = uTrailCount.value;
+      for (let i = 0; i < n; i++) {
+        const q = trail.array[i] as THREE.Vector4;
+        if (timeS - q.w <= TRAIL_WIPED_S && q.z > 0) take(q.x, q.y, Math.max(q.z, 0.038) * 2 + TRACK_CELL_M);
+      }
+      // (A track between two points runs across the box of both, which the points' own boxes cover.)
+      for (let i = 0; i < MAX_THINGS; i++) if (thingHow[i].value.z > 0) take(thingAt[i].value.x, thingAt[i].value.z, thingHow[i].value.z * 1.1 + TRACK_CELL_M);
+      if (box[0] <= box[2]) uTrackBox.value.set(box[0], box[1], box[2], box[3]);
+      else uTrackBox.value.set(1, 1, 0, 0);
       uSun.value.normalize();
       uStyle.value.set(style.broad, style.flat);
       uLook.value.set(Math.max(0.05, look.clumpSize), look.macro, look.edgeWobble, look.groundShade);
@@ -2656,7 +2770,7 @@ export function createGrass(options: GrassOptions): Grass {
       }
       for (const l of all) l.mesh.visible = l.fine ? shown.leaves && l.uGate.value > 0 : shown.tufts;
       stats.computed = all.reduce((n, l) => n + (l.mesh.visible ? l.total : 0), 0);
-      const passes = all.filter((l) => l.mesh.visible).flatMap((l) => [l.reset, l.compute]);
+      const passes = [trackPass, ...all.filter((l) => l.mesh.visible).flatMap((l) => [l.reset, l.compute])];
       if (bloomMeshes[0].visible) passes.push(nearSites.compute, farSites.compute);
       if (passes.length > 0) renderer.compute(passes);
       // The leaves' shadows: the squares nearest the eye, drawn from the sun.
@@ -2718,6 +2832,7 @@ export function createGrass(options: GrassOptions): Grass {
       leafTex.dispose();
       groundTex.dispose();
       ranks.dispose();
+      trackAttr.array = new Float32Array(4);
       canopyTarget?.dispose();
     },
   };
