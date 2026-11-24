@@ -116,7 +116,10 @@ export interface Species {
   /**
    * What the patches are. "colonies": plants that came in and spread, each a disc grown out from where it
    * landed, alike within itself and a little unlike the next (annual meadow-grass in a bent green was
-   * measured at 10 cm to 2.5 m across, 50 cm on average: Poole and Johnston; clover likewise). "blotches":
+   * measured at 10 cm to 2.5 m across, 50 cm on average: Poole and Johnston; clover likewise), with
+   * seedlings come up about them, for a grass that seeds as annual meadow-grass does. "runners": the
+   * same, for a plant that spreads by its runners and hardly by seed (creeping bent in an annual
+   * meadow-grass green, white clover): fewer and rounder, and nothing about them. "blotches":
    * the stand's own grass doing worse or better where the ground makes it, in odd shapes with hazy edges
    * (drought, which greenkeepers call a camouflage pattern).
    */
@@ -165,7 +168,7 @@ export type TextureMode = "detail" | "color";
 /** Rows in the table. A map's species numbers are below this; `NO_GRASS` is not. */
 export const MAX_SPECIES = 16;
 /** Four numbers to a slot, this many slots to a species. */
-export type PatchKind = "colonies" | "blotches";
+export type PatchKind = "colonies" | "runners" | "blotches";
 export const SPECIES_SLOTS = 18;
 
 const TIP_CODE: Record<TipShape, number> = { point: 0, cut: 1, square: 2 };
@@ -252,7 +255,7 @@ export function packSpecies(
     c.set(s.color);
     table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), Math.min(4, Math.max(0.25, s.clumpScale ?? 1)));
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
-    table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, s.patchKind === "blotches" ? 1 : 0);
+    table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, s.patchKind === "blotches" ? 1 : s.patchKind === "runners" ? 2 : 0);
   }
 }
 
@@ -447,8 +450,8 @@ export const TURF_SPECIES: Species[] = [
     height: 0.064, heightSpread: 0.3, density: 1.4, width: 0.0024, widthSpread: 0.0008, tip: "cut",
     splay: 0.85, droop: 0.7, stiffness: 0.9, clump: 0.5, disorder: 0.6, color: "#5e7e4f", tipTint: [1.07, 1.07, 0.95], rootShade: 0.34,
     variation: 0.3, dry: 0.02, sheen: 1,
-    // (Something low and dark among it: clover, where nobody sprays.)
-    patch: 0.08, patchSize: 0.66, patchTint: [0.72, 0.95, 0.72], patchTall: 0.7,
+    // (Something low and dark among it: clover, where nobody sprays. It creeps by its runners.)
+    patchKind: "runners", patch: 0.08, patchSize: 0.66, patchTint: [0.72, 0.95, 0.72], patchTall: 0.7,
     // (No flowers: a course keeps its mown rough clear of them. Where nobody does, daisies, clover, creeping
     // buttercup and selfheal flower under a mower that passes every week or so: see `MORE_TURF.bluegrass`.)
   }),
@@ -505,7 +508,7 @@ export const MORE_TURF: { bermuda: Species; bluegrass: Species } = {
     height: 0.06, heightSpread: 0.2, density: 1.3, tufted: false, width: 0.0024, widthSpread: 0.0008, tip: "cut",
     splay: 0.8, droop: 0.9, stiffness: 0.85, clump: 0.3, disorder: 0.6, color: "#628061", tipTint: [1.08, 1.08, 0.96], rootShade: 0.55,
     variation: 0.18, dry: 0.01, sheen: 0.5, lay: 0.4,
-    patch: 0.12, patchSize: 0.66, patchTint: [0.68, 0.94, 0.7], patchTall: 0.7,
+    patchKind: "runners", patch: 0.12, patchSize: 0.66, patchTint: [0.68, 0.94, 0.7], patchTall: 0.7,
     // (A lawn's: daisies, the clover's heads in its patches, slender speedwell.)
     blooms: [
       { flower: "daisy", perM2: 20, cover: 0.12, site: 0.2, where: "drifts" },
@@ -574,8 +577,9 @@ export const MORE_GRASSES: { poaGreen: Species; kikuyuFairway: Species; kikuyuRo
     height: 0.0032, heightSpread: 0.14, density: 1.7, width: 0.0013, widthSpread: 0.0004, tip: "cut", seedHead: 0.12,
     splay: 0.35, droop: 0.25, stiffness: 1, disorder: 0.35, color: "#789b4a", tipTint: [1.04, 1.05, 0.96], seedTint: [1.35, 1.32, 1.12], rootShade: 0.78, variation: 0.17,
     dry: 0.008, sheen: 0, lay: 1, groundTile: 0.35,
-    // (The bent that is left in it: darker, finer, a little lower.)
-    patchSite: 0, patch: 0.14, patchSize: 0.45, patchTint: [0.89, 0.91, 1.02], patchTall: 0.95,
+    // (The bent that is left in it: darker, finer, a little lower; spreading by its runners, not by seed, so
+    // rounder patches and no seedlings about them. How much darker by eye: as dark as 0.89 it read as stains.)
+    patchKind: "runners", patchSite: 0, patch: 0.14, patchSize: 0.45, patchTint: [0.92, 0.94, 1.02], patchTall: 0.95,
   }),
   kikuyuFairway: turf("Fairway (kikuyu)", 1, { cutTip: 0.4,
     height: 0.013, heightSpread: 0.1, density: 1.7, width: 0.0033, widthSpread: 0.0009, tip: "cut",

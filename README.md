@@ -168,12 +168,16 @@ here: it was set by eye.
   colour and height (`patch`, `patchSize`, `patchTint`, `patchTall`):
   annual meadow-grass in a bent green, green left in a parched lawn. They
   are a tint and a height, not other plants: no clover leaf is drawn.
-  `patchKind` says which of two things they are. Colonies: discs grown
+  `patchKind` says which of three things they are. Colonies: discs grown
   out from where a plant landed, many small and few large, alike within
-  and each a little unlike the next, gathered in drifts (annual
-  meadow-grass on greens was measured at 10 cm to 2.5 m across, 50 cm on
-  average: Poole and Johnston, WSU). Blotches: odd shapes with hazy edges,
-  as drought makes.
+  and each a little unlike the next, gathered in drifts, with seedlings
+  about them (annual meadow-grass on greens was measured at 10 cm to 2.5 m
+  across, 50 cm on average: Poole and Johnston, WSU). Runners: the same for
+  a plant that spreads by its runners and hardly by seed, so no seedlings
+  (creeping bent in a meadow-grass green, white clover). Blotches: odd
+  shapes with hazy edges, as drought makes. A colony's edge is ragged at a
+  few runners' breadth, and no colony is cut off by the grid it is placed
+  on.
 - **The lie of the ground.** Where the map gives its `bounds`, each place
   is known as a crown (above the ground 2.5 m round it) or a hollow
   (below the ground 9 m round it). The grass is lusher in the hollows and

@@ -1221,6 +1221,11 @@ export function createGrass(options: GrassOptions): Grass {
    * species' share and by a slow noise (the drifts). A place is as much in a patch as the nearest colony
    * makes it; its edge is frayed by pushing the place about a little before measuring.
    */
+  /**
+   * How far a colony reaches from its centre at most, in squares of its own size (`inPatch`), its long way,
+   * its ragged edge and all: at the most a centre a square away is three quarters of one from the place.
+   */
+  const REACH_MOST = 0.68;
   const inPatch = (xz: Vec2, k: THREE.Node<"int">): THREE.Node<"float"> => {
     // (More of them where the ground suits them and fewer where it does not: `patchSite`.)
     const share = clamp(row(k, 10).w.mul(float(1).add(row(k, 11).x.mul(dryAt(xz)).mul(1.8))), float(0), float(1));
@@ -1235,8 +1240,13 @@ export function createGrass(options: GrassOptions): Grass {
     // (All the colonies there could be cover about a quarter of the ground: for a larger share they are wider.)
     const often = clamp(share.div(0.24), float(0), float(1)).mul(drift.mul(1.5).add(0.15));
     const wider = max(float(1), pow(share.div(0.24), float(0.5)));
-    // (The plants at a colony's edge: a grain a leaf or two wide, by which the edge is ragged and not drawn.)
-    const grain = noise(xz.div(size.mul(1.1)).add(0.23)).b;
+    // (The plants at a colony's edge: a grain a few runners wide, by which the edge is ragged and not drawn.
+    // Not broader: a grain half a colony wide broke its edge into islands and a colony read as a stain.)
+    const grain = noise(xz.div(size.mul(0.16)).add(0.23)).b;
+    // (`patchKind`: 0 colonies with seedlings about them, 1 blotches, 2 runners, colonies without.)
+    const kindCode = row(k, 9).w;
+    const isBlotches = float(1).sub(step(float(0.5), abs(kindCode.sub(1))));
+    const seeds = float(1).sub(step(float(1.5), kindCode));
     /**
      * The colonies of one size of square: how much the place is in one (x), and how near it is to one,
      * out to twice its breadth (y), which is where its seedlings come up.
@@ -1248,7 +1258,9 @@ export function createGrass(options: GrassOptions): Grass {
       const g = at.add(vec2(lobes.r, lobes.a).sub(0.5).mul(cellM).mul(0.42)).div(cellM);
       const home = floor(g);
       const f = g.sub(home);
-      // (A colony reaches at most a fifth of a square beyond its own, never three quarters of one, so the four squares nearest the place are all that can hold one that reaches it.)
+      // (Only the four squares nearest the place are looked at: a colony in any other has its centre at least
+      // three quarters of a square away, so none reaches further than that from its centre, its ragged edge and
+      // its long way and all, or it is cut off along the squares' lines: `REACH_MOST`.)
       const side = vec2(step(float(0.5), f.x).mul(2).sub(1), step(float(0.5), f.y).mul(2).sub(1));
       let core = float(0) as THREE.Node<"float">;
       let near = float(0) as THREE.Node<"float">;
@@ -1257,28 +1269,29 @@ export function createGrass(options: GrassOptions): Grass {
         const key = cell.add(salt);
         const centre = cell.add(vec2(hashCell(key), hashCell(key.add(17.3))).mul(0.5).add(0.25));
         const small = hashCell(key.add(41.7));
-        const reach = min(mix(float(least), float(most1), small.mul(small)).mul(wider), float(0.74));
-        const there = step(hashCell(key.add(73.1)), often1);
         // (And longer one way than the other, each its own way: up to half as long again.)
+        const longer = mix(float(1), float(1.5), hashCell(key.add(197.9)));
+        const reach = min(mix(float(least), float(most1), small.mul(small)).mul(wider), float(REACH_MOST).div(longer));
+        const there = step(hashCell(key.add(73.1)), often1);
         const lie = hashCell(key.add(151.3)).mul(3.1416);
         const off = g.sub(centre);
         const along = off.x.mul(cos(lie)).add(off.y.mul(sin(lie)));
         const across = off.y.mul(cos(lie)).sub(off.x.mul(sin(lie)));
-        const longer = mix(float(1), float(1.5), hashCell(key.add(197.9)));
         const away = length(vec2(along.div(longer), across)).div(reach);
         // (A colony is one plant's offspring: alike all through, each a little more or less unlike the
         // stand than the next. Its edge is its outermost plants: in or out by the grain, over a tenth of its breadth.)
         const unlike = mix(float(0.45), float(1), hashCell(key.add(113.9)));
-        const inside = smoothstep(float(-0.06), float(0.06), float(0.9).sub(away).add(grain.sub(0.5).mul(0.3)));
+        const inside = smoothstep(float(-0.06), float(0.06), float(0.9).sub(away).add(grain.sub(0.5).mul(0.24)));
         core = max(core, there.mul(unlike).mul(inside));
-        near = max(near, there.mul(float(1).sub(smoothstep(float(0.8), float(2.2), away))));
+        // (Its seedlings' ground: out to the furthest a square away that can still be seen from here, whatever its size.)
+        near = max(near, there.mul(float(1).sub(smoothstep(min(reach, float(0.45)), float(0.75), length(off)))));
       }
       return vec2(core, near);
     };
     const large = colonies(size.mul(6.3), 91.3, often, 0.1, 0.45);
     const middling = colonies(size.mul(2.2), 3.7, often, 0.1, 0.45);
     // (Seedlings: small ones, a hand or two across, thick about the colonies they came from and few elsewhere.)
-    const seedlings = colonies(size.mul(0.7), 47.1, often.mul(float(0.12).add(max(large.y, middling.y).mul(1.1))), 0.12, 0.34);
+    const seedlings = colonies(size.mul(0.7), 47.1, often.mul(float(0.12).add(max(large.y, middling.y).mul(1.1))).mul(seeds), 0.12, 0.34);
     const grown = max(max(large.x, middling.x), seedlings.x.mul(0.85)).mul(mix(float(0.82), float(1), fray.r));
     // Blotches are the other kind: not something that grew, but the ground showing through the grass, so
     // they have no centres and no edges. Three lookups of the noise, turned and of unrelated sizes (one
@@ -1288,7 +1301,7 @@ export function createGrass(options: GrassOptions): Grass {
     const lumps = noise(pushed.div(size.mul(4)).add(0.37)).r.mul(0.4).add(wide.r.mul(0.26)).add(driftRaw.mul(0.22)).add(fray.g.mul(0.12));
     const cut = mix(float(0.62), float(0.34), share);
     const blotched = smoothstep(cut.sub(0.07), cut.add(0.1), lumps).mul(mix(float(0.55), float(1), smoothstep(float(0.3), float(0.7), fray.r)));
-    return mix(grown, blotched, row(k, 9).w).mul(step(float(0.005), share));
+    return mix(grown, blotched, isBlotches).mul(step(float(0.005), share));
   };
   /** A place's colour for being in a patch or not, as a multiplier. */
   const patchTint = (xz: Vec2, k: THREE.Node<"int">): Vec3 => mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), inPatch(xz, k));

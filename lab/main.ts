@@ -682,7 +682,7 @@ async function start() {
     shownAs(edgePanel, s, "edgeBlend", 100, 0, 200, "strays into it (cm): 0 is mown").onChange(changed);
     // Patches: another grass come in, or this one doing worse, over part of its ground.
     const patchPanel = folder("Patches");
-    patchPanel.add(s, "patchKind", ["colonies", "blotches"]).name("they are").onChange(changed);
+    patchPanel.add(s, "patchKind", ["colonies", "runners", "blotches"]).name("they are").onChange(changed);
     shownAs(patchPanel, s, "patch", 100, 0, 100, "share of the ground (%)").onChange(changed);
     shownAs(patchPanel, s, "patchSite", 100, -100, 100, "hollows (-) or crowns (+)").onChange(changed);
     shownAs(patchPanel, s, "patchSize", 100, 5, 400, "across (cm)").onChange(changed);
