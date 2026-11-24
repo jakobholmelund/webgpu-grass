@@ -162,6 +162,10 @@ const map = mixedMap(fieldMap({ ... }), [
 ]);
 ```
 
+A member may be `NO_GRASS` instead of a row: bare ground in patches,
+where the host's own ground shows (sandy scrapes on a links, thin ground
+on a heath).
+
 The members are rows of their own in the species list, so a mix's flowers
 are its members' (`Species.blooms`), up to four to each. A patch is part
 of its stand: the place's distance to another stand stays the map's, so

@@ -3,7 +3,7 @@
 
 import * as THREE from "three/webgpu";
 import { distance, exp, float, floor, max, mix, mod, step, vec2 } from "three/tsl";
-import { type MapSource } from "./field";
+import { type MapSource, NO_GRASS } from "./field";
 import { type GrassMix, memberSalt, mixChances } from "./mixshare";
 import { hashCell } from "./placement";
 import { MAX_SPECIES } from "./species";
@@ -35,13 +35,17 @@ function inColony(xz: Vec2, size: number, kept: number, salt: number): Float {
  * the stand's edge, not by the patches'. (Two grasses of a stand do still run into each other at a patch's
  * edge, as far as each lets its edge stray: `Species.edgeBlend`.)
  *
+ * A member may be `NO_GRASS`: bare ground in the stand, in patches (sandy scrapes on a links, thin ground
+ * on a heath), where the host's own ground shows.
+ *
  * Each member's chance of a colony is worked out here, once (`mixChances`): it throws on shares a mix cannot
  * have. A member costs nine looks at a hash for each place the grass asks about.
  */
 export function mixedMap(source: MapSource, mixes: readonly GrassMix[]): MapSource {
   const worked = mixes.map((m) => {
     for (const row of [m.species, ...m.members.map((x) => x.species)]) {
-      if (!(row >= 0 && row < MAX_SPECIES && Number.isInteger(row))) throw new Error(`A mix's rows are whole numbers below ${MAX_SPECIES}, not ${row}`);
+      const bare = row === NO_GRASS && row !== m.species;
+      if (!bare && !(row >= 0 && row < MAX_SPECIES && Number.isInteger(row))) throw new Error(`A mix's rows are whole numbers below ${MAX_SPECIES} (or a member's NO_GRASS), not ${row}`);
     }
     return { mix: m, chances: mixChances(m) };
   });

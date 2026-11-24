@@ -12,7 +12,7 @@
 
 import { hashCell } from "./rank.ts";
 
-/** One of a mix's grasses after its lead: its row in the species table, its share of the stand, how far across its patches are (m). */
+/** One of a mix's grasses after its lead: its row in the species table (or `NO_GRASS`, 255, for bare ground), its share of the stand, how far across its patches are (m). */
 export interface MixMember {
   species: number;
   share: number;
