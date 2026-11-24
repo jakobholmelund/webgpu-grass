@@ -13,7 +13,7 @@
 import * as THREE from "three/webgpu";
 import { dot, float, length, max, mix, normalWorld, normalize, positionGeometry, positionWorld, pow, sin, smoothstep, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import GUI from "three/addons/libs/lil-gui.module.min.js";
-import { FLOWERS, MAX_BLOOMS, MAX_LEAF_TEXTURES, TURF_SPECIES, type Species, type SpecimenKind, checkSpecies, cloneSpecies, createGrass, heightAt, heightGrid, mowStripes, speciesMap, thingMiddleFor } from "../src/index";
+import { FLOWERS, MAX_BLOOMS, MAX_LEAF_TEXTURES, TURF_SPECIES, finePlace, grassRanks, probePlacement, rankOf, type Species, type SpecimenKind, checkSpecies, cloneSpecies, createGrass, heightAt, heightGrid, mowStripes, speciesMap, thingMiddleFor } from "../src/index";
 import { LEAF_ART } from "./leafart";
 import { type PlotLayout, TURF_LAYOUT, makeHeights, makeMap } from "./world";
 import { SCENES, type Scene } from "./scenes";
@@ -1043,6 +1043,35 @@ async function start() {
     },
     preset,
     load,
+    /**
+     * The card's placement set against its twin in plain numbers (src/rank.ts): for some squares, each
+     * plant's place, its cell's rank and its hash, as the card works them out and as the twin does.
+     */
+    /** The card's placement of a square's first `plants` plants (`probePlacement`): x, z, rank, hash each. */
+    probe: (sq: { count: number; spacing: number; focusX: number; focusZ: number; plants: number }) => probePlacement(renderer, sq),
+    async checkPlacement() {
+      const ranks = grassRanks();
+      const report = [];
+      for (const sq of [{ count: 96, spacing: 0.03, focusX: 1.7, focusZ: -2.2 }, { count: 160, spacing: 0.06, focusX: -517.3, focusZ: 902.6 }, { count: 200, spacing: 0.12, focusX: 31.25, focusZ: 7.5 }]) {
+        const plants = sq.count * sq.count;
+        const card = await probePlacement(renderer, { ...sq, plants });
+        let place = 0;
+        let rankOff = 0;
+        let hashOff = 0;
+        const firstOff: unknown[] = [];
+        for (let i = 0; i < plants; i++) {
+          const p = finePlace(i, sq.count, sq.spacing, sq.focusX, sq.focusZ);
+          place = Math.max(place, Math.abs(card[i * 4] - p.x), Math.abs(card[i * 4 + 1] - p.z));
+          if (card[i * 4 + 2] !== rankOf(ranks, p.cx, p.cz)) rankOff++;
+          if (card[i * 4 + 3] !== p.r0) {
+            hashOff++;
+            if (firstOff.length < 4) firstOff.push({ i, cx: p.cx, cz: p.cz, card: card[i * 4 + 3], twin: p.r0 });
+          }
+        }
+        report.push({ ...sq, plants, worstPlaceM: place, ranksOff: rankOff, hashesOff: hashOff, firstOff });
+      }
+      return report;
+    },
     scenes: SCENES,
     clouds,
     setBall,

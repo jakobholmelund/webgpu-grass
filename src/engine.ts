@@ -23,6 +23,7 @@ import { type HeightSource, type MapSource, type MowSource } from "./field";
 import { makeNoiseTexture } from "./noise";
 import { FLOWER_SLOTS, FLOWERS, type Flower, MAX_BLOOMS, MAX_PETALS, makeFlowerTable, packFlowers } from "./flowers";
 import { MAX_SPECIES, SPECIES_SLOTS, type Species, makeSpeciesTable, packSpecies } from "./species";
+import { hashCell, placeInSquare, rankStore } from "./placement";
 
 type Int = THREE.Node<"int">;
 type Vec2 = THREE.Node<"vec2">;
@@ -300,6 +301,14 @@ const LAYER_SIDE = 332;
 const SWING_WAVE_M = 1.8;
 /** How far (radians of its swing, either way) a leaf is out of step with those about it. */
 const SWING_OWN_RAD = 0.9;
+/**
+ * Seen from higher than this over the ground (m), a square keeps fewer of its plants, as the square of
+ * the height falls, and draws those it keeps broader by as much, so the stand covers its ground as it did:
+ * from above, the leaves of a stand are seen against each other and its ground, and a quarter of them as
+ * broad again reads the same at a fraction of the cost. Never fewer than this share. (After bevy-grass.)
+ */
+const HEIGHT_THIN_FROM_M = 4;
+const HEIGHT_THIN_LEAST = 0.25;
 /** How fast the gusts travel downwind (m/s): this and this much more for each metre a second of wind. */
 const GUST_PACE = 1.2;
 const GUST_PACE_PER_MS = 0.55;
@@ -534,13 +543,6 @@ export interface Grass {
   stats: { plants: number; leaves: number; computed: number; flowers: number };
   dispose(): void;
 }
-
-/** After Dave Hoskins' hash12: even on whole-numbered cells, where a sine hash stands plants in rows. */
-const hashCell = Fn(([pIn]: [Vec2]) => {
-  const p3 = fract(vec3(pIn.x, pIn.y, pIn.x).mul(0.1031)).toVar();
-  p3.addAssign(dot(p3, vec3(p3.y, p3.z, p3.x).add(33.33)));
-  return fract(p3.x.add(p3.y).mul(p3.z));
-});
 
 const hash21 = Fn(([pIn]: [Vec2]) => {
   const p = fract(pIn.mul(vec2(123.34, 456.21))).toVar();
@@ -779,6 +781,10 @@ export function createGrass(options: GrassOptions): Grass {
   const uMown = uniform(0);
   /** The eye's height over the ground it looks at (m), as near as the host has said. */
   const uEyeUp = uniform(1.5);
+  /** The cells' ranks for thinning (placement.ts). */
+  const ranks = rankStore();
+  /** The share of a square's plants kept for the eye's height over the ground: `HEIGHT_THIN_FROM_M`. */
+  const heightShare = (): THREE.Node<"float"> => clamp(pow(float(HEIGHT_THIN_FROM_M).div(max(uEyeUp, float(HEIGHT_THIN_FROM_M))), float(2)), float(HEIGHT_THIN_LEAST), float(1));
   /** shadow, occlusion. */
   const uShade = uniform(new THREE.Vector2(0.6, 0.45));
   /** depth: how far the roots' shade follows the light's fall through the stand (0: the species' own `rootShade`). */
@@ -1474,7 +1480,7 @@ export function createGrass(options: GrassOptions): Grass {
       ? leafWidth.mul(fine ? 1 : TUFT_BROAD)
       : fine
         ? min(seen.mul(float(1).add(sh.y)), max(seen, pixel.mul(1.75)))
-        : leafWidth.mul(TUFT_BROAD).mul(mix(float(0.55), float(1), clamp(dist.div(uLeafReach), float(0), float(1)))).mul(float(1).add(dist.mul(0.09))).mul(mix(float(1.0), float(1.48), smoothstep(float(18), float(38), dist)));
+        : leafWidth.mul(TUFT_BROAD).mul(mix(float(0.55), float(1), clamp(dist.div(uLeafReach), float(0), float(1)))).mul(float(1).add(dist.mul(0.09))).mul(mix(float(1.0), float(1.48), smoothstep(float(18), float(38), dist))).div(heightShare().sqrt());
     // No two leaves of a plant the same height.
     const rh = hashCell(hcell.add(b.mul(3.1).add(17.0)));
     // A mown leaf is not as long as the grass is tall: it grew to its own length, some well past the
@@ -1758,21 +1764,11 @@ export function createGrass(options: GrassOptions): Grass {
       atomicStore(drawStore.element(1), uint(0));
     })().compute(1);
 
-    /** Where plant `instanceIndex` grows: its cell of the square, scattered within it. */
-    const place = (idx: THREE.Node<"uint"> | THREE.Node<"float">) => {
-      const gx = float(mod(float(idx), float(L.count)));
-      const gz = floor(float(idx).div(float(L.count)));
-      const cell = floor(uFocus.div(L.spacing)).add(vec2(gx, gz)).sub(L.count * 0.5);
-      // (The hash loses its evenness on a fine square's large cell numbers, and the leaves fall into rows: it is given the cell within a repeat no eye will find.)
-      const hcell = fine ? mod(cell, float(1024)) : cell;
-      const r0 = hashCell(hcell);
-      const r1 = hashCell(hcell.add(31.7));
-      const xz = cell.add(vec2(r0, r1)).mul(L.spacing);
-      return { hcell, r0, r1, xz };
-    };
+    /** Where plant `instanceIndex` grows: its cell of the square, scattered within it (placement.ts). */
+    const place = (idx: THREE.Node<"uint"> | THREE.Node<"float">) => placeInSquare(idx, L.count, L.spacing, uFocus, fine);
 
     const compute = Fn(() => {
-      const { hcell, r0, r1, xz } = place(instanceIndex);
+      const { cell, hcell, r0, xz } = place(instanceIndex);
       const outState = vec4(0, 0, 0, 0).toVar();
       const outShape = vec4(0, 0, 0, 0).toVar();
       const outCol = vec4(0, 0, 0, 0).toVar();
@@ -1820,15 +1816,22 @@ export function createGrass(options: GrassOptions): Grass {
         const viewShare0 = (fine ? leavesAt(fromThick(xz), L.range).mul(max(leafSeen(row(k, 1).x.add(row(k, 1).y.mul(0.5)), dist), row(k, 12).y.mul(STEMS_SEEN_LEAST))) : pow(clamp(float(1).sub(fadeDist.sub(L.range * 0.12).div(L.range * 0.88)), float(0), float(1)), float(0.85)))
           .mul(mix(float(1), mix(float(0.74), float(1), chaosThick), disorder))
           .mul(float(1).sub(uStyle.x.mul(0.6)))
-          .mul(uAmount);
+          .mul(uAmount)
+          // (Fewer seen from higher up, each broader: see `HEIGHT_THIN_FROM_M`.)
+          .mul(heightShare());
         const viewShare = viewShare0.mul(uGate);
         // (A density up to 1 is the share of plants that grow; above it every plant grows, with more leaves: see `leaf`.)
         const below = (L as NearLayer).below ?? 0;
         const shortEnough = below > 0 ? float(1).sub(smoothstep(float(below * 0.6), float(below), tall0)) : float(1);
         const keepShare = viewShare.mul(min(density, float(1))).mul(shortEnough);
-        const thin = fine
-          ? step(hashCell(hcell.add(91.7)), keepShare)
-          : step(r1, float(1).sub(smoothstep(float(L.range * 0.3), float(L.range * 0.8), dist).mul(0.55))).mul(step(hashCell(hcell.add(91.7)), density));
+        // (Kept by the cell's rank, not a coin of its own: whatever the share, those kept are evenly spread. A
+        // tuft square keeps fewer further off, and fewer still from high up; those left are drawn broader.)
+        const rank = ranks.rankOf(cell);
+        const tuftShare = float(1).sub(smoothstep(float(L.range * 0.3), float(L.range * 0.8), dist).mul(0.55))
+          .mul(min(density, float(1)))
+          .mul(mix(float(1.0), float(0.45), smoothstep(float(18), float(38), dist)))
+          .mul(heightShare());
+        const thin = step(rank, fine ? keepShare : tuftShare);
 
         // A fine leaf stands on its root, so it grows right up to the border: every place is one species'
         // or the other's, and kept back from the line on both sides the leaves leave a bare strip along it, a
@@ -1891,7 +1894,8 @@ export function createGrass(options: GrassOptions): Grass {
         tallNode.mulAssign(inTussock);
 
         // (The tufts thin with distance, and those left are drawn broader.)
-        const lodKeep = fine ? float(1) : step(r0, mix(float(1.0), float(0.45), smoothstep(float(18), float(38), dist)));
+        // (The tufts' thinning with distance is in `thin`, by rank.)
+        const lodKeep = float(1);
         const pressed = fine ? pressedAt(xz) : vec4(0, 0, 1, 0);
         const tall = (fine ? amongThings(tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep), xz, gy, hashCell(hcell.add(57.3))) : tallNode.mul(float(0.78).add(r0.mul(0.3))).mul(grow).mul(lodKeep)).mul(pressed.z);
 
@@ -2713,6 +2717,7 @@ export function createGrass(options: GrassOptions): Grass {
       noiseTex.dispose();
       leafTex.dispose();
       groundTex.dispose();
+      ranks.dispose();
       canopyTarget?.dispose();
     },
   };

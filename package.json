@@ -20,7 +20,7 @@
     "dev": "vite --open /lab/",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/boundary.test.mjs"
+    "test": "node --test test/boundary.test.mjs test/placement.test.mjs"
   },
   "devDependencies": {
     "@types/three": "^0.187.0",
