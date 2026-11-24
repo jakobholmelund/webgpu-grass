@@ -112,8 +112,8 @@ export const FORM_CODE: Record<FlowerForm, number> = { disc: 0, spike: 1, umbel:
  * own: marram's, a dense pale spike 7 to 22 cm long and 1.5 to 2 cm thick, over its leaves.
  *
  * On a coastal meadow the sea reaches in winter, among red fescue and saltmarsh rush: thrift, a round
- * pink head of small flowers 1.5 to 3 cm across on a bare stalk to 20 or 30 cm, from a cushion (Flora of
- * Victoria; up to 40 cm); sea aster, a head 1 to 4 cm across (commonly 2) of pale violet rays round a
+ * pink head of small flowers 1.5 to 3 cm across on a bare stalk, the plant 20 to 30 cm (Flora of Victoria),
+ * its stalks up to 40 (drawn at 30); sea aster, a head 1 to 4 cm across (commonly 2) of pale violet rays round a
  * yellow disc, on 15 to 60 cm, from July to September (iFlora; Flora Europaea's subsp. tripolium of the
  * North Sea and the Baltic); sea plantain, a lax spike 3 to 7 cm long and 3 to 4 mm thick of greenish
  * flowers with pale yellow stamens, on a stout stalk 5 to 20 cm (Flora Europaea; Gleason and Cronquist).
@@ -151,7 +151,7 @@ export const FLOWERS: Record<string, Flower> = {
   birdsfoot: { name: "Bird's-foot trefoil", form: "umbel", petals: 5, petalLength: 0.011, petalWidth: 0.007, lift: 0.55, centre: 0.002, length: 0.004, stem: 0.12, petalColor: "#f0c21a", centreColor: "#e0960f", colony: 1.2, light: 0.3 },
   marram: { name: "Marram's spike", form: "spike", petals: 16, petalLength: 0.007, petalWidth: 0.004, lift: 0.85, centre: 0.014, length: 0.15, stem: 1, petalColor: "#d6cda2", centreColor: "#c9bf93", colony: 3.0, light: 0.4 },
   plantain: { name: "Ribwort plantain", form: "spike", petals: 16, petalLength: 0.005, petalWidth: 0.0016, lift: 0.1, centre: 0.007, length: 0.025, stem: 0.3, petalColor: "#efe9d2", centreColor: "#4a3a28", colony: 1.2, light: 0.3 },
-  thrift: { name: "Thrift", petals: 16, petalLength: 0.009, petalWidth: 0.0042, lift: 0.9, centre: 0.008, stem: 0.22, petalColor: "#e49cbc", centreColor: "#c77898", colony: 1.2, light: 0.4 },
+  thrift: { name: "Thrift", petals: 16, petalLength: 0.009, petalWidth: 0.0042, lift: 0.9, centre: 0.008, stem: 0.3, petalColor: "#e49cbc", centreColor: "#c77898", colony: 1.2, light: 0.4 },
   seaAster: { name: "Sea aster", petals: 16, petalLength: 0.0075, petalWidth: 0.0022, lift: 0.08, centre: 0.007, stem: 0.35, petalColor: "#ab9ed8", centreColor: "#e0b21c", colony: 1.4, light: 0.4 },
   seaPlantain: { name: "Sea plantain", form: "spike", petals: 16, petalLength: 0.0035, petalWidth: 0.0013, lift: 0.15, centre: 0.0045, length: 0.05, stem: 0.15, petalColor: "#e6dca2", centreColor: "#5d5a38", colony: 1.2, light: 0.4 },
 };
