@@ -43,6 +43,11 @@ export interface Species {
   /** A seed head on a thin stalk, 0 (a plain leaf) to 1. */
   seedHead: number;
   /**
+   * The share of its stems that carry a seed head, 0..1: all of them in a stand gone to seed, a few in
+   * marram's tussocks. A stem in seed stands a fifth taller than the leaves, as a flowering stem does.
+   */
+  seedShare: number;
+  /**
    * How round it is, 0 (a leaf: flat, folded along its rib) to 1 (a stem: a rush has no leaves, only
    * round green stems that taper to a point; `width` is then the stem's thickness at its foot). A stem
    * looks the same from every side, has no rib and no veins, and lets no light through.
@@ -56,6 +61,8 @@ export interface Species {
   stiffness: number;
   /** How strongly it grows in clumps, taller at their centres, 0..1. */
   clump: number;
+  /** How far apart its clumps and tussocks are, as a multiple of the field's (`look.clumpSize`): marram's stand further apart than a fescue's. */
+  clumpScale: number;
   /**
    * How far it stands in tussocks with open ground between, 0 (a sward: it grows everywhere) to 1 (small
    * tussocks well apart). A tussock is a clump (`look.clumpSize` apart), some broader and some smaller.
@@ -181,14 +188,15 @@ export function makeSpeciesTable(): THREE.Vector4[] {
  *   7  the picture's layer (-1 for none), its strength, its mode (0 detail, 1 colour), cut-out
  *   8  the ground's picture: how much shows (0 if it has none), its tile (m)
  *        (and in z, w: patchSize, patchTall)
+ *   9  the ground's picture's own mean colour (linear r, g, b), patches are blotches (1) or colonies (0)
  *  10  patchTint r, g, b, patch
- *   9  the ground's picture's own mean colour (linear r, g, b)
- *  12  tussock, stem, flower
+ *  11  patchSite, edgeBlend, cutTip, seedShare
+ *  12  tussock, stem, flower, clumpScale
  *  13  its flowers (`blooms`, four to a slot from here): their rows in the flower table (-1 for none)
  *  14    flowers to the square metre
  *  15    the share of ground
  *  16    where they take (-1 hollows .. 1 crowns)
- *  17    1 if they flower only in the species' patches
+ *  17    where: 0 in drifts, 1 only in the species' patches, 2 in drifts on its tussocks
  *
  * `layers` gives each picture's name its layer in the leaf texture, `flowerAt` each flower's name its
  * row in the flower table (`packFlowers`).
@@ -221,7 +229,7 @@ export function packSpecies(
     table[row + 7].set(layer, layer < 0 ? 0 : s.textureStrength, s.textureMode === "color" ? 1 : 0, layer >= 0 && s.textureCutout ? 1 : 0);
     const under = ground[k] ?? null;
     table[row + 8].set(under ? s.groundDetail : 0, Math.max(0.05, s.groundTile), Math.max(0.02, s.patchSize), s.patchTall);
-    table[row + 11].set(Math.min(1, Math.max(-1, s.patchSite)), Math.max(0, s.edgeBlend), Math.min(1, Math.max(0, s.cutTip)), 0);
+    table[row + 11].set(Math.min(1, Math.max(-1, s.patchSite)), Math.max(0, s.edgeBlend), Math.min(1, Math.max(0, s.cutTip)), Math.min(1, Math.max(0, s.seedShare ?? 1)));
     const ids = [-1, -1, -1, -1];
     const perM2 = [0, 0, 0, 0];
     const cover = [0, 0, 0, 0];
@@ -234,7 +242,7 @@ export function packSpecies(
       perM2[j] = b.perM2;
       cover[j] = Math.min(1, Math.max(0, b.cover));
       site[j] = Math.min(1, Math.max(-1, b.site ?? 0));
-      inPatches[j] = b.where === "patches" ? 1 : 0;
+      inPatches[j] = b.where === "patches" ? 1 : b.where === "tussocks" ? 2 : 0;
     });
     table[row + 13].set(ids[0], ids[1], ids[2], ids[3]);
     table[row + 14].set(perM2[0], perM2[1], perM2[2], perM2[3]);
@@ -242,7 +250,7 @@ export function packSpecies(
     table[row + 16].set(site[0], site[1], site[2], site[3]);
     table[row + 17].set(inPatches[0], inPatches[1], inPatches[2], inPatches[3]);
     c.set(s.color);
-    table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), 0);
+    table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), Math.min(4, Math.max(0.25, s.clumpScale ?? 1)));
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
     table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, s.patchKind === "blotches" ? 1 : 0);
   }
@@ -251,7 +259,7 @@ export function packSpecies(
 /** A plain leaf: what a species written before leaves had pictures is given. */
 const NO_TEXTURE = { leafTexture: "", textureMode: "detail" as TextureMode, textureStrength: 1, textureCutout: false };
 /** What a species written before these were settings is given: a plain leaf, standing as it grew. */
-const NO_PATCHES = { tussock: 0, stem: 0, flower: 0, blooms: [] as Bloom[], cutTip: 0, edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
+const NO_PATCHES = { tussock: 0, stem: 0, flower: 0, seedShare: 1, clumpScale: 1, blooms: [] as Bloom[], cutTip: 0, edgeBlend: 0, patchKind: "colonies" as PatchKind, patchSite: 0, patch: 0, patchSize: 0.4, patchTint: [1.1, 1.12, 0.88] as [number, number, number], patchTall: 1 };
 const ADDED_LATER = { ...NO_TEXTURE, ...NO_PATCHES, lay: 0, groundDetail: 1, groundTile: 0.6 };
 
 /**
@@ -377,7 +385,7 @@ export function checkSpecies(value: unknown): string | null {
       if (!Array.isArray(blooms) || blooms.length > MAX_BLOOMS) return `species ${i}: blooms is not a list of at most ${MAX_BLOOMS}`;
       for (const b of blooms as Record<string, unknown>[]) {
         if (typeof b !== "object" || b === null || typeof b.flower !== "string" || ![b.perM2, b.cover, b.site].every((n) => typeof n === "number" && Number.isFinite(n))) return `species ${i}: a bloom is not a flower's name and three numbers`;
-        if (b.where !== "drifts" && b.where !== "patches") return `species ${i}: a bloom's where is not drifts or patches`;
+        if (b.where !== "drifts" && b.where !== "patches" && b.where !== "tussocks") return `species ${i}: a bloom's where is not drifts, patches or tussocks`;
       }
     }
   }
@@ -439,33 +447,30 @@ export const TURF_SPECIES: Species[] = [
     variation: 0.3, dry: 0.02, sheen: 1,
     // (Something low and dark among it: clover, where nobody sprays.)
     patch: 0.08, patchSize: 0.66, patchTint: [0.72, 0.95, 0.72], patchTall: 0.7,
-    // (And what flowers under a mower that passes every week or so, where nobody sprays: daisies in drifts;
-    // white clover's heads, which are where the clover is; creeping buttercup in the wet hollows; a little
-    // selfheal.)
-    blooms: [
-      { flower: "daisy", perM2: 26, cover: 0.14, site: 0.2, where: "drifts" },
-      { flower: "clover", perM2: 24, cover: 0, site: 0, where: "patches" },
-      { flower: "buttercup", perM2: 8, cover: 0.12, site: -0.8, where: "drifts" },
-      { flower: "selfheal", perM2: 10, cover: 0.06, site: 0, where: "drifts" },
-    ],
+    // (No flowers: a course keeps its mown rough clear of them. Where nobody does, daisies, clover, creeping
+    // buttercup and selfheal flower under a mower that passes every week or so: see `MORE_TURF.bluegrass`.)
   }),
   turf("Deep rough (red fescue)", 3, { twist: 0.6,
     height: 0.125, heightSpread: 0.5, density: 1.4, width: 0.0009, widthSpread: 0.0004, tip: "point",
     splay: 1.2, droop: 1.6, stiffness: 0.25, clump: 1, disorder: 1, color: "#789b64", tipTint: [1.12, 1.12, 0.88], rootShade: 0.5,
     variation: 0.24, dry: 0.05, sheen: 0.5, edgeBlend: 0.4,
-    // (Cut a few times a year: cat's-ear on the drier banks, and ox-eye daisies.)
+    // (Cut a few times a year: cat's-ear and bird's-foot trefoil on the drier banks, ox-eye daisies, and
+    // creeping buttercup down in the wet hollows.)
     blooms: [
       { flower: "catsear", perM2: 8, cover: 0.12, site: 0.5, where: "drifts" },
+      { flower: "birdsfoot", perM2: 6, cover: 0.1, site: 0.7, where: "drifts" },
       { flower: "oxeye", perM2: 5, cover: 0.1, site: 0, where: "drifts" },
+      { flower: "buttercup", perM2: 6, cover: 0.1, site: -0.8, where: "drifts" },
     ],
   }),
   turf("Fescue in seed", 4, {
     height: 0.3, heightSpread: 0.8, color: "#94a565", tipTint: [1.08, 1.08, 0.94], seedTint: [1.42, 1.38, 1.02], dry: 0.2, density: 0.38, edgeBlend: 1,
-    // (Thin, dry, unmown ground: cat's-ear most, ox-eye daisies, and a little knapweed.)
+    // (Thin, dry, unmown ground: cat's-ear most, ox-eye daisies, harebells, yarrow.)
     blooms: [
       { flower: "catsear", perM2: 8, cover: 0.18, site: 0.6, where: "drifts" },
       { flower: "oxeye", perM2: 6, cover: 0.15, site: 0, where: "drifts" },
-      { flower: "knapweed", perM2: 3, cover: 0.1, site: 0, where: "drifts" },
+      { flower: "harebell", perM2: 5, cover: 0.12, site: 0.5, where: "drifts" },
+      { flower: "yarrow", perM2: 3, cover: 0.12, site: 0.3, where: "drifts" },
     ],
   }),
   turf("Hay meadow", 5, { height: 0.6, edgeBlend: 1.2, color: "#76954b",
@@ -532,8 +537,8 @@ export const MORE_PLANTS: { rush: Species } = {
  * California, Australia and South Africa) runs on thick stems over and under the ground into a dense,
  * springy mat, the ball sitting up on it in a fairway and down in it in the rough: leaves 3 to 5 mm,
  * folded, stiff, a bright pale green (taken as bermuda's 45 ug: it is a warm-season grass like bermuda),
- * torn more than cut by a mower. Its own flowers are white threads among the leaves after a mowing,
- * which are not drawn.
+ * torn more than cut by a mower. Its own flowers are its stamens: white threads among the leaves after a
+ * mowing.
  *
  * Fine fescue (Chewings and slender creeping red fescue) is a links' fairway and green: leaves rolled to a
  * needle, half a millimetre, the densest of the turf grasses, grey-green with red fescue's wax, browning
@@ -543,8 +548,9 @@ export const MORE_PLANTS: { rush: Species } = {
  * Marram (Ammophila arenaria) holds the dunes behind a links: leaves rolled into stiff, sharp, grey-green
  * tubes 50 cm to over a metre, fanning from tussocks with bare sand between, many dead and pale, and in
  * summer a dense pale spike of a seed head 7 to 22 cm long (the floras). Its colour is red fescue's
- * with more wax (an estimate). Its rolled leaf is drawn as part way to a stem (`stem`). The spikes are
- * not drawn: a species' seed head is on every leaf or on none, and marram's are on a few stalks.
+ * with more wax (an estimate). Its rolled leaf is drawn as part way to a stem (`stem`), its tussocks further
+ * apart than the field's clumps (`clumpScale`), by eye, and its spikes as a flower of its own (`FLOWERS.marram`)
+ * on the tussocks: a leaf has too few joints to carry a spike a fifth of its length.
  *
  * As with the others, the habit was set by eye.
  */
@@ -560,12 +566,17 @@ export const MORE_GRASSES: { poaGreen: Species; kikuyuFairway: Species; kikuyuRo
     height: 0.013, heightSpread: 0.1, density: 1.7, width: 0.0033, widthSpread: 0.0009, tip: "cut",
     splay: 0.45, droop: 0.15, twist: 0.35, stiffness: 1, clump: 0, disorder: 0.35, color: "#698a4c", tipTint: [1.06, 1.06, 0.95], rootShade: 0.6,
     variation: 0.2, dry: 0.015, sheen: 0.6, lay: 0.55, groundTile: 0.5,
+    // (Its stamens, white threads out of the mat in the days after a mowing.)
+    blooms: [{ flower: "kikuyu", perM2: 30, cover: 0.35, site: 0, where: "drifts" }],
   }),
   kikuyuRough: turf("Rough (kikuyu)", 2, { cutTip: 0.55,
     height: 0.05, heightSpread: 0.22, density: 1.6, width: 0.0038, widthSpread: 0.001, tip: "cut",
     splay: 0.9, droop: 0.45, twist: 0.6, stiffness: 0.95, clump: 0.25, disorder: 0.5, color: "#678849", tipTint: [1.07, 1.07, 0.94], rootShade: 0.36,
     variation: 0.24, dry: 0.025, sheen: 0.8, lay: 0,
-    blooms: [{ flower: "dandelion", perM2: 6, cover: 0.08, site: 0, where: "drifts" }],
+    blooms: [
+      { flower: "kikuyu", perM2: 26, cover: 0.3, site: 0, where: "drifts" },
+      { flower: "dandelion", perM2: 6, cover: 0.08, site: 0, where: "drifts" },
+    ],
   }),
   fescueGreen: turf("Green (fine fescue)", 0, { cutTip: 0.14,
     height: 0.0045, heightSpread: 0.1, density: 2.3, width: 0.0006, widthSpread: 0.0002, tip: "cut",
@@ -582,7 +593,13 @@ export const MORE_GRASSES: { poaGreen: Species; kikuyuFairway: Species; kikuyuRo
   }),
   marram: turf("Marram", 5, {
     height: 0.8, heightSpread: 0.5, density: 1, tufted: true, width: 0.003, widthSpread: 0.001, tip: "point",
-    splay: 0.55, droop: 0.3, twist: 0.3, seedHead: 0, stiffness: 0.7, clump: 1, disorder: 0.6, tussock: 0.85, stem: 0.6, flower: 0,
+    splay: 0.55, droop: 0.3, twist: 0.3, seedHead: 0, stiffness: 0.7, clump: 1, clumpScale: 1.9, disorder: 0.6, tussock: 0.85, stem: 0.6, flower: 0,
+    // (Its spikes, which are its flowers, rising from the tussocks; and harebells and bird's-foot trefoil.)
+    blooms: [
+      { flower: "marram", perM2: 9, cover: 0.8, site: 0, where: "tussocks" },
+      { flower: "harebell", perM2: 4, cover: 0.15, site: 0, where: "drifts" },
+      { flower: "birdsfoot", perM2: 4, cover: 0.12, site: 0.4, where: "drifts" },
+    ],
     color: "#7f9a6e", tipTint: [1.15, 1.1, 0.86], seedTint: [1.6, 1.45, 1.05], rootShade: 0.5, variation: 0.2, dry: 0.28, sheen: 0.5, edgeBlend: 0.8,
   }),
 };

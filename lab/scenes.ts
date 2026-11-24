@@ -187,21 +187,36 @@ export const SCENES: Scene[] = [
     sun: [130, 24], wind: [200, 4],
   },
   {
-    id: "flowers-in-the-rough",
-    title: "Flowers in the rough",
-    blurb: "The rough's four, here thick on the ground (they come in thin drifts as the rough is made): daisies, white clover where the clover is, creeping buttercup down in the hollows, selfheal. Petals within a few strides of the eye, dots of their colour beyond.",
+    id: "flowers-in-the-deep-rough",
+    title: "Flowers in the deep rough",
+    blurb: "The deep rough's four, here thick on the ground (they come in thin drifts as it is made): cat's-ear and bird's-foot trefoil on the drier ground, ox-eye daisies, creeping buttercup down in the hollows. Petals within a few strides of the eye, dots of their colour beyond.",
     species: turf((list) => {
-      list[ROUGH].patch = 0.3;
-      list[ROUGH].blooms = [
-        { flower: "daisy", perM2: 22, cover: 0.5, site: 0.2, where: "drifts" },
-        { flower: "clover", perM2: 26, cover: 0, site: 0, where: "patches" },
-        { flower: "buttercup", perM2: 12, cover: 0.45, site: -0.8, where: "drifts" },
-        { flower: "selfheal", perM2: 12, cover: 0.35, site: 0, where: "drifts" },
+      list[DEEP_ROUGH].blooms = [
+        { flower: "catsear", perM2: 10, cover: 0.5, site: 0.5, where: "drifts" },
+        { flower: "birdsfoot", perM2: 10, cover: 0.45, site: 0.7, where: "drifts" },
+        { flower: "oxeye", perM2: 8, cover: 0.45, site: 0, where: "drifts" },
+        { flower: "buttercup", perM2: 10, cover: 0.5, site: -0.8, where: "drifts" },
       ];
     }),
-    plot: ROUGH, row: ROUGH,
-    view: { x: 14, z: -6, eye: 0.32, yaw: -0.9, pitch: -0.36, fov: 42 },
+    plot: DEEP_ROUGH, row: DEEP_ROUGH,
+    view: { x: 14, z: -6, eye: 0.42, yaw: -0.9, pitch: -0.3, fov: 42 },
     sun: [150, 42], wind: [90, 3],
+  },
+  {
+    id: "dry-grass-in-flower",
+    title: "Dry grass in flower",
+    blurb: "Flowers that are not discs, thick in fescue: harebells hanging from hair-thin stalks, yarrow's flat white tops, ribwort plantain's dark spikes ringed with stamens, selfheal's violet spikes.",
+    species: turf((list) => {
+      list[FESCUE].blooms = [
+        { flower: "harebell", perM2: 12, cover: 0.55, site: 0, where: "drifts" },
+        { flower: "yarrow", perM2: 8, cover: 0.5, site: 0, where: "drifts" },
+        { flower: "plantain", perM2: 10, cover: 0.5, site: 0, where: "drifts" },
+        { flower: "selfheal", perM2: 10, cover: 0.5, site: 0, where: "drifts" },
+      ];
+    }),
+    plot: FESCUE, row: FESCUE,
+    view: { x: -26, z: 4, eye: 0.55, yaw: 2.4, pitch: -0.25, fov: 42 },
+    sun: [160, 34], wind: [220, 2],
   },
   {
     id: "a-links",

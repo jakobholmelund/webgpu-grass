@@ -302,6 +302,10 @@ const SWING_WAVE_M = 1.8;
 const SWING_OWN_RAD = 0.9;
 /** How long a dead leaf is beside a live one of the same plant. */
 const DEAD_LEAF_TALL = 0.62;
+/** How much taller than the leaves a stem in seed stands, where only some are (`Species.seedShare`). */
+const SEED_STALK_TALL = 1.2;
+/** Where a flower's centre is broadest, as a share of the way from its top to its foot. */
+const CENTRE_SHOULDER = 0.35;
 /** A dead leaf: straw. */
 const STRAW = new THREE.Color("#b9ac80");
 /** A leaf folded along its rib has each half turned this far (radians) from flat, at a `fold` of 1: a shallow V. */
@@ -377,6 +381,12 @@ export interface WorldLight {
   sky?(xz: Vec2): THREE.Node<"float">;
   /** What the grass's colour is multiplied by there: wet grass is darker, grass under leaves is lit green. */
   tint?(xz: Vec2): Vec3;
+  /**
+   * What the colour of something in the grass that is not grass (a flower) is multiplied by there: the
+   * light's part of `tint` (the shade, the wet), without what a host puts in `tint` to make the grass the
+   * colour of its ground. Not given, flowers take `tint`.
+   */
+  light?(xz: Vec2): Vec3;
   /**
    * The air between a leaf and the eye: given the leaf's colour and where it is, the colour that reaches
    * the eye. A host with haze of its own (the scene's fog is applied without this). Called for each
@@ -999,6 +1009,46 @@ export function createGrass(options: GrassOptions): Grass {
   const inShade = () => uShadeTint.div(mix(uShadeTint, uSunTint, 0.62));
 
   /**
+   * The clump a place belongs to, for a species: the nearest of a scatter of clump centres (`look.clumpSize`
+   * apart, times the species' `clumpScale`), as its squared distance in shares of the way between clumps,
+   * which clump it is, and the way out from its centre. Within a shader function (`Fn`).
+   */
+  const nearestClump = (xz: Vec2, k: Int) => {
+    const clumpAt = xz.div(uLook.x.mul(max(row(k, 12).w, float(0.25))));
+    const clumpCell = floor(clumpAt);
+    const best = float(9).toVar();
+    const id = vec2(0, 0).toVar();
+    const out = vec2(0, 0).toVar();
+    for (let cj = -1; cj <= 1; cj++) {
+      for (let ci = -1; ci <= 1; ci++) {
+        const cc = clumpCell.add(vec2(ci, cj));
+        const centre = cc.add(vec2(hash21(cc.add(11.3)), hash21(cc.add(47.9))));
+        const away = clumpAt.sub(centre);
+        const d2 = dot(away, away);
+        If(d2.lessThan(best), () => {
+          best.assign(d2);
+          id.assign(cc);
+          out.assign(away);
+        });
+      }
+    }
+    return { best, id, out };
+  };
+  /**
+   * Whether a place is on one of its species' tussocks (`Species.tussock`), 0..1: the plant grows only within
+   * some way of its clump's centre, with open ground beyond; the further, the smaller the tussocks; some
+   * broad and some small. (In squared shares of the way between clumps, as `nearestClump` says.) Along the
+   * stand's edge (`edge`, m) the tussocks close up: what grows at a marsh's margin is a fringe, not islands.
+   * `fray` pushes a tussock's edge about a little. 1 everywhere for a species that is not in tussocks.
+   */
+  const tussockOf = (best: THREE.Node<"float">, id: Vec2, k: Int, edge: THREE.Node<"float">, fray: THREE.Node<"float">) => {
+    const tussockAmt = row(k, 12).x;
+    const tussockWide = mix(float(TUSSOCK_WIDEST), float(TUSSOCK_SMALLEST), tussockAmt).mul(mix(float(0.45), float(1.5), hash21(id.add(29.9))));
+    const inFringe = float(1).sub(smoothstep(float(fringeM * 0.4), float(fringeM), edge));
+    return mix(float(1), max(float(1).sub(smoothstep(tussockWide.mul(0.55), tussockWide, best.add(fray))), inFringe), step(float(0.01), tussockAmt));
+  };
+
+  /**
    * How much a place is in one of its species' patches, 0..1.
    *
    * A patch is a colony: a plant that came in and spread outward from where it landed, so it is a disc,
@@ -1200,7 +1250,7 @@ export function createGrass(options: GrassOptions): Grass {
     ), shows);
     // (A stand in seed is paler for its heads, which is most of what is seen of it from any way off.)
     const heads = row(k, 6);
-    const inSeed = mix(vec3(1), vec3(heads.x, heads.y, heads.z), row(k, 2).z.mul(0.5));
+    const inSeed = mix(vec3(1), vec3(heads.x, heads.y, heads.z), row(k, 2).z.mul(row(k, 11).w).mul(0.5));
     // (No gust is painted on the far ground: the wind is seen where there are leaves to move, and ground
     // that stands in for leaves too far off to draw is still, as they would seem from there.)
     const blown = float(1);
@@ -1341,7 +1391,6 @@ export function createGrass(options: GrassOptions): Grass {
     const cutout = picture.w;
     const isCut = step(float(0.5), form.x);
     const isSquare = step(float(1.5), form.x);
-    const seed = form.z;
     const flat = uStyle.y;
     // (A stem is round: it is not folded, and has no rib to be carried back.)
     const stem = row(k, 12).y;
@@ -1356,6 +1405,10 @@ export function createGrass(options: GrassOptions): Grass {
     const ang = r0.add(b.mul(0.381966)).mul(6.2832);
     const out2 = vec2(cos(ang), sin(ang));
     const rb = hashCell(hcell.add(b.mul(7.3)));
+    // A seed head, on the share of the stems that carry one (`seedShare`).
+    const seedShare = row(k, 11).w;
+    const fertile = step(hashCell(hcell.add(b.mul(5.9).add(41.0))), seedShare);
+    const seed = form.z.mul(fertile);
     // A tuft's blades stand about its root, a mown sward's over its whole cell; none over the border.
     const footRadius = mix(float(0.02).add(rb.mul(0.16)), float(0.03).add(pow(rb, float(0.5)).mul(0.17)), isCut);
     // (Close-mown turf is not plants standing apart: it is one sward, its shoots as near each other one
@@ -1378,7 +1431,7 @@ export function createGrass(options: GrassOptions): Grass {
     const squareX = mix(sign(gPos.x).mul(0.85), float(0), isTip);
     // (A stem is thickest at its foot and tapers evenly to its point.)
     const stemX = mix(sign(gPos.x).mul(mix(float(1), float(STEM_TAPER), gPos.y)), float(0), isTip);
-    const shapedX = mix(mix(mix(gPos.x, mix(gPos.x, cutSide.mul(TOP_HALF_WIDTH), isTip), isCut), squareX, isSquare).mul(seedHead), stemX, stem);
+    const shapedX = mix(mix(mix(gPos.x, mix(gPos.x, cutSide.mul(TOP_HALF_WIDTH), isTip), isCut), squareX, isSquare), stemX, stem).mul(seedHead);
     // (A cut-out leaf is a plain strip, its outline left to its picture.)
     const leafX = mix(shapedX, edge.mul(float(1).sub(onRib)), cutout);
     // (The slant is the mower's tear across the leaf: about as high as the leaf is broad, some nearly
@@ -1415,7 +1468,9 @@ export function createGrass(options: GrassOptions): Grass {
     // (A dead leaf is an old one: the plant's lowest, down in the stand under the live ones, not up among their tips.)
     // (A dead stem is last year's, and stands as tall as this year's.)
     const oldLeaf = mix(float(1), mix(float(DEAD_LEAF_TALL), float(1), stem), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w));
-    const bladeTall = mix(tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y))), tall.mul(float(0.85).add(rh.mul(0.95))), mown).mul(oldLeaf);
+    // (Where only some stems are in seed, those stand a fifth over the leaves, as a flowering stem does.)
+    const seedStalk = mix(float(1), float(SEED_STALK_TALL), fertile.mul(step(float(1e-3), form.z)).mul(float(1).sub(step(float(0.999), seedShare))));
+    const bladeTall = mix(tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y))), tall.mul(float(0.85).add(rh.mul(0.95))), mown).mul(oldLeaf).mul(seedStalk);
 
     // The leaf arches: upright at the root, bending over more and more towards the tip.
     const lean0 = vec2(st.x, st.y).add(out2.mul(fine ? float(0.2).add(rb.mul(0.42)) : float(0.25).add(rb.mul(0.3))).mul(blade.z));
@@ -1805,24 +1860,7 @@ export function createGrass(options: GrassOptions): Grass {
         // each plant belongs to the nearest of a scatter of clump centres and
         // takes that clump's height and tone; it stands tallest at the centre
         // and leans out from it.
-        const clumpAt = xz.div(uLook.x);
-        const clumpCell = floor(clumpAt);
-        const clumpBest = float(9).toVar();
-        const clumpId = vec2(0, 0).toVar();
-        const clumpOut = vec2(0, 0).toVar();
-        for (let cj = -1; cj <= 1; cj++) {
-          for (let ci = -1; ci <= 1; ci++) {
-            const cc = clumpCell.add(vec2(ci, cj));
-            const centre = cc.add(vec2(hash21(cc.add(11.3)), hash21(cc.add(47.9))));
-            const away = clumpAt.sub(centre);
-            const d2 = dot(away, away);
-            If(d2.lessThan(clumpBest), () => {
-              clumpBest.assign(d2);
-              clumpId.assign(cc);
-              clumpOut.assign(away);
-            });
-          }
-        }
+        const { best: clumpBest, id: clumpId, out: clumpOut } = nearestClump(xz, k);
         // (The fine leaves take the clumps at half strength, so they agree with the tufts beyond them.)
         const clumped = clumpAmt.mul(fine ? 0.5 : 1);
         const clumpTall = mix(float(0.74), float(1.16), hash21(clumpId.add(3.7))).mul(mix(float(1.08), float(0.85), smoothstep(float(0.05), float(0.6), clumpBest)));
@@ -1832,11 +1870,7 @@ export function createGrass(options: GrassOptions): Grass {
         // Tussocks (`Species.tussock`): the plant grows only within some way of its clump's centre, with
         // open ground beyond: the further, the smaller the tussocks; some broad and some small, and the
         // odd one missing. (In squared shares of the way between clumps, as `clumpBest` is.)
-        const tussockAmt = row(k, 12).x;
-        const tussockWide = mix(float(TUSSOCK_WIDEST), float(TUSSOCK_SMALLEST), tussockAmt).mul(mix(float(0.45), float(1.5), hash21(clumpId.add(29.9))));
-        // (Along the stand's edge the tussocks close up: what grows at a marsh's margin is a fringe, not islands.)
-        const inFringe = float(1).sub(smoothstep(float(fringeM * 0.4), float(fringeM), here.edge.add(chA.b.sub(0.5).mul(fringeM * 0.3))));
-        const inTussock = mix(float(1), max(float(1).sub(smoothstep(tussockWide.mul(0.55), tussockWide, clumpBest.add(chB.r.sub(0.5).mul(0.05)))), inFringe), step(float(0.01), tussockAmt));
+        const inTussock = tussockOf(clumpBest, clumpId, k, here.edge.add(chA.b.sub(0.5).mul(fringeM * 0.3)), chB.r.sub(0.5).mul(0.05));
         tallNode.mulAssign(inTussock);
 
         // (The tufts thin with distance, and those left are drawn broader.)
@@ -2198,6 +2232,9 @@ export function createGrass(options: GrassOptions): Grass {
       const drifts = [slow.r.mul(0.6).add(quick.g.mul(0.4)), slow.g.mul(0.6).add(quick.b.mul(0.4)), slow.b.mul(0.6).add(quick.a.mul(0.4)), slow.a.mul(0.6).add(quick.r.mul(0.4))];
       const dry = dryAt(xz);
       const patched = smoothstep(float(0.35), float(0.65), inPatch(xz, k));
+      // (On the species' tussocks: a tussock grass's flowering stems rise from its tussocks, not the open ground.)
+      const clump = nearestClump(xz, k);
+      const onTussock = step(float(0.5), tussockOf(clump.best, clump.id, k, here.edge, float(0)));
       const pick = hashCell(hcell.add(91.7));
       const chosen = float(-1).toVar();
       const upTo = float(0).toVar();
@@ -2205,7 +2242,9 @@ export function createGrass(options: GrassOptions): Grass {
         const at = (v: Vec4) => [v.x, v.y, v.z, v.w][j];
         const share = clamp(at(cover).mul(float(1).add(at(site).mul(dry).mul(1.8))), float(0), float(1));
         const from = clamp(float(0.5).add(float(0.5).sub(share).mul(0.6)), float(0.05), float(0.95));
-        const inDrift = mix(smoothstep(from.sub(0.05), from.add(0.05), drifts[j]).mul(step(float(1e-3), share)), patched, at(inPatches));
+        // (`where`: 0 in drifts, 1 in the patches, 2 in drifts on the tussocks.)
+        const inDrifts = smoothstep(from.sub(0.05), from.add(0.05), drifts[j]).mul(step(float(1e-3), share));
+        const inDrift = mix(mix(inDrifts, patched, step(float(0.5), at(inPatches))), inDrifts.mul(onTussock), step(float(1.5), at(inPatches)));
         // (A place has one flower at most: each flower takes its own share of the places, one after another.)
         upTo.addAssign(at(perM2).mul(L.spacing * L.spacing).mul(inDrift).mul(uAmount).mul(step(float(-0.5), at(ids))));
         chosen.assign(chosen.lessThan(0).and(pick.lessThan(upTo)).select(at(ids), chosen));
@@ -2251,11 +2290,15 @@ export function createGrass(options: GrassOptions): Grass {
     };
     return { compute, read, attach };
   };
-  /** A flower's colour as it is lit there, into the host's air, and no brighter than leaves may be. */
-  const bloomLit = (col: Vec3, xz: Vec2, at: Vec3, up: THREE.Node<"float">, facing: Vec3): Vec3 => {
+  /**
+   * A flower's colour as it is lit there, into the host's air, and no brighter than leaves may be. Its head
+   * takes the host's light (`world.light`); its stalk, green as a leaf is, the grass's tint (`stalk` 1).
+   */
+  const bloomLit = (col: Vec3, xz: Vec2, at: Vec3, up: THREE.Node<"float">, facing: Vec3, stalk: THREE.Node<"float"> = float(0)): Vec3 => {
     const lit = col.mul(light(facing)).mul(mix(inShade(), vec3(1), sunReach(xz, up)));
-    const tinted = options.world?.tint ? lit.mul(options.world.tint(xz)) : lit;
-    const inAir = options.world?.air ? options.world.air(tinted, at) : tinted;
+    const world = options.world;
+    const tinted = world?.light && world?.tint ? lit.mul(mix(world.light(xz), world.tint(xz), stalk)) : world?.light ? lit.mul(world.light(xz)) : world?.tint ? lit.mul(world.tint(xz)) : lit;
+    const inAir = world?.air ? world.air(tinted, at) : tinted;
     return inAir.mul(min(float(1), uBrightest.div(max(max(inAir.x, inAir.y), max(inAir.z, float(1e-4))))));
   };
   const hidden = vec3(0, -9999, 0);
@@ -2271,11 +2314,17 @@ export function createGrass(options: GrassOptions): Grass {
       for (const along of [0, 0.55, 1]) for (const across of [-1, 1]) { pos.push(across, along, slot); part.push(0, 0); }
       index.push(v0, v0 + 1, v0 + 2, v0 + 1, v0 + 3, v0 + 2, v0 + 2, v0 + 3, v0 + 4, v0 + 3, v0 + 5, v0 + 4);
     }
+    // (The centre: its top, a ring a third of the way down, and its foot's ring: a dome, a knob or a spike's core.)
     const c0 = pos.length / 3;
     pos.push(0, 0, 0);
     part.push(1, 0);
-    for (let i = 0; i < 8; i++) { pos.push(Math.cos((i / 8) * Math.PI * 2), 1, Math.sin((i / 8) * Math.PI * 2)); part.push(1, 0); }
+    for (const along of [CENTRE_SHOULDER, 1]) for (let i = 0; i < 8; i++) { pos.push(Math.cos((i / 8) * Math.PI * 2), along, Math.sin((i / 8) * Math.PI * 2)); part.push(1, 0); }
     for (let i = 0; i < 8; i++) index.push(c0, c0 + 1 + i, c0 + 1 + ((i + 1) % 8));
+    for (let i = 0; i < 8; i++) {
+      const a = c0 + 1 + i;
+      const b = c0 + 1 + ((i + 1) % 8);
+      index.push(a, a + 8, b, b, a + 8, b + 8);
+    }
     const s0 = pos.length / 3;
     for (const along of [0, 0.5, 1]) for (const across of [-1, 1]) { pos.push(across, along, 0); part.push(2, 0); }
     index.push(s0, s0 + 1, s0 + 2, s0 + 1, s0 + 3, s0 + 2, s0 + 2, s0 + 3, s0 + 4, s0 + 3, s0 + 5, s0 + 4);
@@ -2291,15 +2340,25 @@ export function createGrass(options: GrassOptions): Grass {
       const isCentre = step(float(0.5), uv().x).mul(step(uv().x, float(1.5)));
       const isStalk = step(float(1.5), uv().x);
       const shape = frow(site.f, 0);
-      const petals = frow(site.f, 1).x;
+      const kind = frow(site.f, 1);
+      const petals = kind.x;
+      // Its form (`Flower.form`): 0 a disc, 1 a spike, 2 an umbel, 3 a bell; and a spike's length or an umbel's breadth.
+      const isSpike = step(abs(kind.z.sub(1)), float(0.5));
+      const isUmbel = step(abs(kind.z.sub(2)), float(0.5));
+      const isBell = step(abs(kind.z.sub(3)), float(0.5));
+      const span = kind.w;
       // (Smaller as they give way to the dots, and gone where the dots have taken over.)
       const size = float(1).sub(smoothstep(float(BLOOM_PETALS_TO[0]), float(BLOOM_PETALS_TO[1]), site.away));
-      const axisX = normalize(cross(site.up, vec3(0, 0, 1)));
-      const axisZ = cross(axisX, site.up);
-      // A petal: out from the centre's rim along its own way, rising as it goes, broadest past its middle.
+      // Which way the head faces: up its stalk, or for a bell, hanging from the stalk's top, out to its own side.
+      const hang = normalize(vec3(cos(site.luck.mul(6.2832)).mul(0.9), float(-1), sin(site.luck.mul(6.2832)).mul(0.9)));
+      const up = normalize(mix(site.up, hang, isBell));
+      const axisX = normalize(cross(up, vec3(0, 0, 1)));
+      const axisZ = cross(axisX, up);
       const slot = g.z;
       const along = g.y;
       const own = hashCell(vec2(slot.mul(7.13), site.luck.mul(91.7)));
+      // A disc's (and a bell's) petal: out from the centre's rim along its own way, rising as it goes (hanging,
+      // if its lift is below nothing), broadest past its middle.
       const angle = slot.add(site.luck).add(own.sub(0.5).mul(0.35)).div(petals).mul(6.2832);
       const out = vec2(cos(angle), sin(angle));
       const reach = shape.w.mul(0.4).add(along.mul(shape.x).mul(mix(float(0.86), float(1.1), own)));
@@ -2309,21 +2368,50 @@ export function createGrass(options: GrassOptions): Grass {
       const outBy = shape.w.mul(0.4).add(reach.sub(shape.w.mul(0.4)).mul(cos(turnUp.mul(along))));
       const upBy = reach.sub(shape.w.mul(0.4)).mul(sin(turnUp.mul(along))).add(own.sub(0.5).mul(shape.x).mul(0.12).mul(along));
       const flat = out.mul(outBy).add(vec2(out.y.negate(), out.x).mul(g.x).mul(broad));
-      const petalAt = site.head.add(axisX.mul(flat.x).add(axisZ.mul(flat.y)).add(site.up.mul(upBy)).mul(size));
-      // The centre: a low dome.
+      const discAt = axisX.mul(flat.x).add(axisZ.mul(flat.y)).add(up.mul(upBy));
+      // A spike's or an umbel's floret: one of `petals`, placed by the golden angle so none line up. Up the
+      // spike from its foot to its tip, round its core; or over the umbel's top, more of them to its edge and
+      // its edge a little lower. Each is a small petal pointing out, raised as far as `lift` says.
+      // (Kept in 0..1: the centre's and stalk's vertices carry other numbers where a petal has its slot, and a
+      // root of less than nothing is not a number, which a mix by nought does not take away.)
+      const t = clamp(slot.add(0.5).div(petals), float(0), float(1));
+      const fAngle = slot.mul(2.39996).add(site.luck.mul(6.2832));
+      const fOut = axisX.mul(cos(fAngle)).add(axisZ.mul(sin(fAngle)));
+      const fSide = axisX.mul(sin(fAngle).negate()).add(axisZ.mul(cos(fAngle)));
+      const spikeFoot = up.mul(t.mul(span)).add(fOut.mul(shape.w.mul(0.5)));
+      const umbelFoot = fOut.mul(t.sqrt().mul(span)).add(up.mul(float(1).sub(t).mul(span).mul(0.3).add(shape.x.mul(0.2))));
+      const fRise = clamp(shape.z, float(0), float(1)).mul(1.5708).mul(mix(float(0.8), float(1.2), own));
+      const floretAt = mix(spikeFoot, umbelFoot, isUmbel)
+        .add(fOut.mul(cos(fRise)).add(up.mul(sin(fRise))).mul(along.mul(shape.x)))
+        .add(fSide.mul(g.x).mul(broad));
+      const florets = max(isSpike, isUmbel);
+      const petalAt = site.head.add(mix(discAt, floretAt, florets).mul(size));
+      // The centre: a low dome, or a knob under the petals (`centreTall`); a spike's core, from its foot to its
+      // tip; an umbel has none.
       const rim = shape.w.mul(0.5);
-      const centreAt = site.head.add(axisX.mul(g.x.mul(rim)).add(axisZ.mul(g.z.mul(rim))).add(site.up.mul(float(1).sub(along).mul(rim).mul(0.45).add(shape.x.mul(shape.z).mul(0.2)))).mul(size));
+      const centreTall = frow(site.f, 3).w;
+      // (A dome is round in profile: its shoulder ring most of its breadth, at two thirds of its height. A spike's
+      // core is a blunt cylinder: full breadth from the shoulder down.)
+      const domeR = float(1).sub(float(1).sub(along).mul(float(1).sub(along))).sqrt();
+      const coreR = min(along.div(CENTRE_SHOULDER), float(1));
+      // (An umbel's centre is its body: the many florets too small to draw one by one, a low dome as broad as the head.)
+      const centreR = mix(rim.mul(mix(domeR, coreR, isSpike)), span.mul(domeR), isUmbel);
+      const domeUp = float(1).sub(along).mul(rim).mul(mix(float(0.45), float(2.2), centreTall)).add(shape.x.mul(max(shape.z, float(0))).mul(0.2)).sub(rim.mul(1.3).mul(centreTall));
+      const coreUp = min(float(1).sub(along).div(1 - CENTRE_SHOULDER), float(1)).mul(span).add(rim.mul(0.8).mul(float(1).sub(coreR)));
+      const umbelUp = float(1).sub(along).mul(span).mul(0.3);
+      const centreAt = site.head.add(axisX.mul(g.x.mul(centreR)).add(axisZ.mul(g.z.mul(centreR))).add(up.mul(mix(mix(domeUp, coreUp, isSpike), umbelUp, isUmbel))).mul(size));
       // The stalk: a thread from the ground to the head, bowed the way the head nods.
       const toEye = normalize(cameraPosition.sub(site.root));
       const side = normalize(cross(toEye, vec3(0, 1, 0)));
       const stalkAt = mix(site.root, site.head, along).add(vec3(0, 1, 0).mul(site.tall.mul(0.06).mul(sin(along.mul(3.1416))))).add(side.mul(g.x).mul(0.0006).mul(float(1).add(site.away.mul(0.6))));
       const gone = site.alive.mul(size).lessThan(0.02).or(isCentre.add(isStalk).lessThan(0.5).and(slot.greaterThanEqual(petals.sub(0.5))));
-      const at = gone.select(hidden, mix(mix(petalAt, centreAt, isCentre), stalkAt, isStalk));
+      const at = gone.select(hidden, isStalk.greaterThan(0.5).select(stalkAt, isCentre.greaterThan(0.5).select(centreAt, petalAt)));
       const petalCol = vec3(frow(site.f, 2).x, frow(site.f, 2).y, frow(site.f, 2).z).mul(mix(float(0.78), float(1.04), along)).mul(mix(float(0.93), float(1.05), own));
       const centreCol = vec3(frow(site.f, 3).x, frow(site.f, 3).y, frow(site.f, 3).z).mul(mix(float(1.08), float(0.8), along));
       const stalkCol = vec3(row(site.k, 4).x, row(site.k, 4).y, row(site.k, 4).z).mul(mix(float(0.55), float(0.95), along));
-      const facing = normalize(site.up.add(axisX.mul(out.x).add(axisZ.mul(out.y)).mul(shape.z.mul(along)).mul(float(1).sub(isCentre)).mul(float(1).sub(isStalk))));
-      const col = bloomLit(mix(mix(petalCol, centreCol, isCentre), stalkCol, isStalk), site.xz, at, site.tall, facing);
+      const petalFacing = mix(up.add(axisX.mul(out.x).add(axisZ.mul(out.y)).mul(shape.z.mul(along))), up.add(fOut.mul(0.6)), florets);
+      const facing = normalize(mix(petalFacing, up, max(isCentre, isStalk)));
+      const col = bloomLit(mix(mix(petalCol, centreCol, isCentre), stalkCol, isStalk), site.xz, at, site.tall, facing, isStalk);
       const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
       mat.positionNode = at;
       mat.colorNode = vec4(varying(col, "vBloomCol"), 1);
@@ -2344,12 +2432,24 @@ export function createGrass(options: GrassOptions): Grass {
       const g = positionGeometry;
       const shape = frow(site.f, 0);
       const shows = smoothstep(float(BLOOM_PETALS_TO[0]), float(BLOOM_PETALS_TO[1]), site.away).mul(float(1).sub(smoothstep(float(BLOOM_DOTS_TO[0]), float(BLOOM_DOTS_TO[1]), site.away)));
-      const own = shape.x.mul(mix(float(1), float(0.55), shape.z)).add(shape.w.mul(0.4)).mul(0.85);
-      const drawn = max(own, site.away.mul(uPixel).mul(0.6));
+      // Its outline, as half a breadth across and half a height up: a disc's round; a spike tall and thin (its
+      // core and florets across, its length up, standing on the stalk's top); an umbel broad and low.
+      const farKind = frow(site.f, 1);
+      const isSpikeF = step(abs(farKind.z.sub(1)), float(0.5));
+      const isUmbelF = step(abs(farKind.z.sub(2)), float(0.5));
+      const discOwn = shape.x.mul(mix(float(1), float(0.55), clamp(shape.z, float(0), float(1)))).add(shape.w.mul(0.4)).mul(0.85);
+      const ownW = mix(mix(discOwn, shape.w.mul(0.5).add(shape.x.mul(0.6)), isSpikeF), farKind.w.add(shape.x.mul(0.5)), isUmbelF);
+      const ownH = mix(mix(discOwn, farKind.w.mul(0.5), isSpikeF), farKind.w.mul(0.35).add(shape.x.mul(0.5)), isUmbelF);
+      const least = site.away.mul(uPixel).mul(0.6);
+      const drawnW = max(ownW, least);
+      const drawnH = max(ownH, least);
       const toEye = normalize(cameraPosition.sub(site.head));
       const side = normalize(cross(vec3(0, 1, 0), toEye));
       const upOn = cross(toEye, side);
-      const at = site.alive.mul(shows).lessThan(0.02).select(hidden, site.head.add(side.mul(g.x).add(upOn.mul(g.y)).mul(drawn)));
+      const middle = site.head.add(site.up.mul(farKind.w.mul(0.5).mul(isSpikeF)));
+      const at = site.alive.mul(shows).lessThan(0.02).select(hidden, middle.add(side.mul(g.x.mul(drawnW)).add(upOn.mul(g.y.mul(drawnH)))));
+      const own = ownW.mul(ownH).sqrt();
+      const drawn = drawnW.mul(drawnH).sqrt();
       // (Mostly its petals' colour, a little of its centre's; and a dot drawn larger than the flower is as much fainter, toward the grass it stands in.)
       const flowerCol = mix(vec3(frow(site.f, 2).x, frow(site.f, 2).y, frow(site.f, 2).z), vec3(frow(site.f, 3).x, frow(site.f, 3).y, frow(site.f, 3).z), 0.16);
       const grassCol = vec3(row(site.k, 4).x, row(site.k, 4).y, row(site.k, 4).z);

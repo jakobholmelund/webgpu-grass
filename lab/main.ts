@@ -23,7 +23,7 @@ import { REFERENCES } from "./reference";
 // (v3: the lab starts from the named turf grasses, eight of them.)
 const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
-const LAB_BUILD = "b68";
+const LAB_BUILD = "b69";
 const query = new URLSearchParams(location.search);
 /** The most species a scene of the lab's has. */
 const LAB_ROWS = 11;
@@ -584,11 +584,13 @@ async function start() {
     // (A leaf is turned up to 60 degrees from square-on at a twist of 1.)
     shownAs(leafPanel, s, "twist", 60, 0, 60, "twist (°)").onChange(changed);
     shownAs(leafPanel, s, "seedHead", 100, 0, 100, "seed head (%)").onChange(changed);
+    shownAs(leafPanel, s, "seedShare", 100, 0, 100, "stems in seed (%)").onChange(changed);
     shownAs(leafPanel, s, "stem", 100, 0, 100, "round stem (%)").onChange(changed);
     shownAs(leafPanel, s, "flower", 100, 0, 100, "stems in flower (%)").onChange(changed);
     const habitPanel = folder("Behaviour");
     shownAs(habitPanel, s, "stiffness", 100, 0, 100, "stiffness (%)").onChange(changed);
     shownAs(habitPanel, s, "clump", 100, 0, 100, "clumping (%)").onChange(changed);
+    habitPanel.add(s, "clumpScale", 0.25, 4, 0.05).name("clumps apart (x field's)").onChange(changed);
     shownAs(habitPanel, s, "tussock", 100, 0, 100, "tussocks (%)").onChange(changed);
     shownAs(habitPanel, s, "disorder", 100, 0, 100, "disorder (%)").onChange(changed);
     shownAs(habitPanel, s, "lay", 100, 0, 100, "laid by the mower (%)").onChange(changed);
@@ -596,10 +598,10 @@ async function start() {
     const bloomPanel = folder("Flowers");
     const slots = Array.from({ length: MAX_BLOOMS }, (_, j) => {
       const b = s.blooms[j];
-      return { flower: b?.flower ?? "none", perM2: b?.perM2 ?? 20, cover: Math.round((b?.cover ?? 0.15) * 100), site: b?.site ?? 0, patches: b?.where === "patches" };
+      return { flower: b?.flower ?? "none", perM2: b?.perM2 ?? 20, cover: Math.round((b?.cover ?? 0.15) * 100), site: b?.site ?? 0, where: b?.where ?? "drifts" };
     });
     const bloomsChanged = () => {
-      s.blooms = slots.filter((p) => p.flower !== "none").map((p) => ({ flower: p.flower, perM2: p.perM2, cover: p.cover / 100, site: p.site, where: p.patches ? "patches" : "drifts" }));
+      s.blooms = slots.filter((p) => p.flower !== "none").map((p) => ({ flower: p.flower, perM2: p.perM2, cover: p.cover / 100, site: p.site, where: p.where }));
       changed();
     };
     slots.forEach((p, j) => {
@@ -607,7 +609,7 @@ async function start() {
       bloomPanel.add(p, "perM2", 0, 40, 1).name("  to the square metre").onChange(bloomsChanged);
       bloomPanel.add(p, "cover", 0, 100, 1).name("  ground they bloom on (%)").onChange(bloomsChanged);
       bloomPanel.add(p, "site", -1, 1, 0.1).name("  hollows (-1) or crowns (1)").onChange(bloomsChanged);
-      bloomPanel.add(p, "patches").name("  only in its patches").onChange(bloomsChanged);
+      bloomPanel.add(p, "where", ["drifts", "patches", "tussocks"]).name("  where").onChange(bloomsChanged);
     });
     const colourPanel = folder("Colour");
     colourPanel.addColor(s, "color").name("colour").onChange(changed);
