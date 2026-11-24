@@ -18,7 +18,7 @@
 // only chooses which plants are drawn.
 
 import * as THREE from "three/webgpu";
-import { Fn, If, Loop, abs, asin, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, distance, dot, exp, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, If, Loop, abs, asin, atomicAdd, atomicStore, attribute, cross, cameraPosition, clamp, cos, dFdx, dFdy, distance, dot, exp, float, floor, fract, instanceIndex, int, length, max, min, mix, mod, normalize, positionGeometry, positionWorld, pow, sign, sin, smoothstep, step, storage, texture, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4 } from "three/tsl";
 import { type HeightSource, type MapSource, type MowSource } from "./field";
 import { makeNoiseTexture } from "./noise";
 import { FLOWER_SLOTS, FLOWERS, type Flower, MAX_BLOOMS, MAX_PETALS, makeFlowerTable, packFlowers } from "./flowers";
@@ -29,6 +29,8 @@ type Int = THREE.Node<"int">;
 type Vec2 = THREE.Node<"vec2">;
 type Vec3 = THREE.Node<"vec3">;
 type Vec4 = THREE.Node<"vec4">;
+/** A place's slopes across the picture (d/dx, d/dy), for a texture read inside a branch. */
+type Slopes = [Vec2, Vec2];
 
 /** The top of a stand, as a share of its species' height: its plants stand from 0.78 to 1.08 of that. */
 const STAND_TOP = 0.93;
@@ -1024,10 +1026,11 @@ export function createGrass(options: GrassOptions): Grass {
   let groundTex = makeGroundTex(groundPixels, groundLayers);
   /** Every lookup of the ground's pictures, so a grown texture can be put in their place. */
   const groundNodes: THREE.TextureNode[] = [];
-  const groundSample = (at: Vec2, k: Int) => {
+  const groundSample = (at: Vec2, k: Int, slopes?: Slopes) => {
     const n = texture(groundTex, at);
     groundNodes.push(n);
-    return n.depth(k) as unknown as Vec4;
+    // (With the place's slopes, worked out before any branch: inside one a read cannot find its own.)
+    return (slopes ? n.grad(slopes[0], slopes[1]).depth(k) : n.depth(k)) as unknown as Vec4;
   };
   /** Make room for the ground pictures of `rows` species. */
   const growGround = (rows: number) => {
@@ -1081,6 +1084,19 @@ export function createGrass(options: GrassOptions): Grass {
   const anyCutout = (list: readonly Species[]) => list.some((sp) => sp.textureCutout && !!sp.leafTexture);
 
   const noise = (uv: Vec2) => texture(noiseTex, uv).level(float(0)) as unknown as Vec4;
+  /**
+   * `then()` where `when` holds and `otherwise` elsewhere, as a real branch: so work whose answer would be
+   * thrown away (multiplied by nothing, or faded out by distance) is not done at all. Nothing inside may
+   * read a texture by its own slopes: `noise` reads its top level, the ground's pictures take theirs (`groundSample`).
+   */
+  const onlyWhere = <T extends THREE.Node>(when: THREE.Node<"bool">, then: () => T, otherwise: T): T =>
+    Fn(() => {
+      const out = (otherwise as unknown as { toVar(): T & { assign(v: T): void } }).toVar();
+      If(when, () => {
+        out.assign(then());
+      });
+      return out;
+    })() as unknown as T;
 
   /** The species and the border distance at a place, the place wobbled so a border is not the map's steps. */
   const lookup = (xz: Vec2) => {
@@ -1231,10 +1247,11 @@ export function createGrass(options: GrassOptions): Grass {
     return clamp(kept.y.sub(0.5).mul(1.3).sub(kept.z.sub(0.5).mul(1.5)), float(-1), float(1));
   };
   /** The grass's colour for where it lies: lusher and deeper in the hollows, paler and yellower on the crowns (`look.site`). */
-  const siteTint = (xz: Vec2): Vec3 => {
-    const dry = dryAt(xz);
-    return mix(vec3(1), mix(vec3(0.88, 0.97, 0.86), vec3(1.12, 1.05, 0.84), dry.mul(0.5).add(0.5)), uSite.mul(abs(dry)));
-  };
+  const siteTint = (xz: Vec2): Vec3 =>
+    onlyWhere(uSite.greaterThan(0), () => {
+      const dry = dryAt(xz);
+      return mix(vec3(1), mix(vec3(0.88, 0.97, 0.86), vec3(1.12, 1.05, 0.84), dry.mul(0.5).add(0.5)), uSite.mul(abs(dry)));
+    }, vec3(1));
   /**
    * How much of the sun reaches a point `up` metres above the ground at a
    * place, 0..1: a few steps towards the sun, each asking whether the grass
@@ -1354,6 +1371,12 @@ export function createGrass(options: GrassOptions): Grass {
     const edgeward = float(1).sub(smoothstep(float(PATCH_EDGE_M[0]), float(PATCH_EDGE_M[1]), edge)).add(shaded).min(float(1));
     const byEdge = max(float(0), float(1).add(towards.mul(edgeward.mul(2.2).sub(0.6))));
     const share = clamp(row(k, 10).w.mul(float(1).add(row(k, 11).x.mul(dryAt(xz)).mul(1.8))).mul(byEdge), float(0), float(1));
+    // (None at all for a species without patches, or where its share is next to nothing: then none of what
+    // follows is worked out.)
+    return onlyWhere(share.greaterThanEqual(0.005), () => patchesAt(xz, k, share), float(0));
+  };
+  /** `inPatch` where the species' share of the ground (`share`) is something. Within a shader function (`Fn`). */
+  const patchesAt = (xz: Vec2, k: THREE.Node<"int">, share: THREE.Node<"float">): THREE.Node<"float"> => {
     const size = row(k, 8).z;
     const turn = (v: Vec2, c: number, sn: number) => vec2(v.x.mul(c).sub(v.y.mul(sn)), v.x.mul(sn).add(v.y.mul(c)));
     // (Where colonies get in at all: over some ten patches' breadth, more here and none there.)
@@ -1387,46 +1410,57 @@ export function createGrass(options: GrassOptions): Grass {
       // three quarters of a square away, so none reaches further than that from its centre, its ragged edge and
       // its long way and all, or it is cut off along the squares' lines: `REACH_MOST`.)
       const side = vec2(step(float(0.5), f.x).mul(2).sub(1), step(float(0.5), f.y).mul(2).sub(1));
-      let core = float(0) as THREE.Node<"float">;
-      let near = float(0) as THREE.Node<"float">;
+      const core = float(0).toVar();
+      const near = float(0).toVar();
       for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
         const cell = home.add(vec2(side.x.mul(ox), side.y.mul(oy)));
         const key = cell.add(salt);
-        const centre = cell.add(vec2(hashCell(key), hashCell(key.add(17.3))).mul(0.5).add(0.25));
-        const small = hashCell(key.add(41.7));
-        // (And longer one way than the other, each its own way: up to half as long again.)
-        const longer = mix(float(1), float(1.5), hashCell(key.add(197.9)));
-        const reach = min(mix(float(least), float(most1), small.mul(small)).mul(wider), float(REACH_MOST).div(longer));
-        const there = step(hashCell(key.add(73.1)), often1);
-        const lie = hashCell(key.add(151.3)).mul(3.1416);
-        const off = g.sub(centre);
-        const along = off.x.mul(cos(lie)).add(off.y.mul(sin(lie)));
-        const across = off.y.mul(cos(lie)).sub(off.x.mul(sin(lie)));
-        const away = length(vec2(along.div(longer), across)).div(reach);
-        // (A colony is one plant's offspring: alike all through, each a little more or less unlike the
-        // stand than the next. Its edge is its outermost plants: in or out by the grain, over a tenth of its breadth.)
-        const unlike = mix(float(0.45), float(1), hashCell(key.add(113.9)));
-        const inside = smoothstep(float(-0.06), float(0.06), float(0.9).sub(away).add(grain.sub(0.5).mul(0.24)));
-        core = max(core, there.mul(unlike).mul(inside));
-        // (Its seedlings' ground: out to the furthest a square away that can still be seen from here, whatever its size.)
-        near = max(near, there.mul(float(1).sub(smoothstep(min(reach, float(0.45)), float(0.75), length(off)))));
+        // (Most squares have no colony: for those none of the rest is worked out.)
+        If(often1.greaterThanEqual(hashCell(key.add(73.1))), () => {
+          const centre = cell.add(vec2(hashCell(key), hashCell(key.add(17.3))).mul(0.5).add(0.25));
+          const small = hashCell(key.add(41.7));
+          // (And longer one way than the other, each its own way: up to half as long again.)
+          const longer = mix(float(1), float(1.5), hashCell(key.add(197.9)));
+          const reach = min(mix(float(least), float(most1), small.mul(small)).mul(wider), float(REACH_MOST).div(longer));
+          const lie = hashCell(key.add(151.3)).mul(3.1416);
+          const off = g.sub(centre);
+          const along = off.x.mul(cos(lie)).add(off.y.mul(sin(lie)));
+          const across = off.y.mul(cos(lie)).sub(off.x.mul(sin(lie)));
+          const away = length(vec2(along.div(longer), across)).div(reach);
+          // (A colony is one plant's offspring: alike all through, each a little more or less unlike the
+          // stand than the next. Its edge is its outermost plants: in or out by the grain, over a tenth of its breadth.)
+          const unlike = mix(float(0.45), float(1), hashCell(key.add(113.9)));
+          const inside = smoothstep(float(-0.06), float(0.06), float(0.9).sub(away).add(grain.sub(0.5).mul(0.24)));
+          core.assign(max(core, unlike.mul(inside)));
+          // (Its seedlings' ground: out to the furthest a square away that can still be seen from here, whatever its size.)
+          near.assign(max(near, float(1).sub(smoothstep(min(reach, float(0.45)), float(0.75), length(off)))));
+        });
       }
       return vec2(core, near);
     };
-    const large = colonies(size.mul(6.3), 91.3, often, 0.1, 0.45);
-    const middling = colonies(size.mul(2.2), 3.7, often, 0.1, 0.45);
-    // (Seedlings: small ones, a hand or two across, thick about the colonies they came from and few elsewhere.)
-    const seedlings = colonies(size.mul(0.7), 47.1, often.mul(float(0.12).add(max(large.y, middling.y).mul(1.1))).mul(seeds), 0.12, 0.34);
-    const grown = max(max(large.x, middling.x), seedlings.x.mul(0.85)).mul(mix(float(0.82), float(1), fray.r));
-    // Blotches are the other kind: not something that grew, but the ground showing through the grass, so
-    // they have no centres and no edges. Three lookups of the noise, turned and of unrelated sizes (one
-    // alone is the same four shapes in rows), cut where the species' share of the ground lies above.
-    const wide = noise(turn(xz, 0.814, 0.581).div(size.mul(9.48)).add(vec2(0.13, 0.71)));
-    const pushed = xz.add(vec2(wide.r, wide.a).sub(0.5).mul(size).mul(2.2));
-    const lumps = noise(pushed.div(size.mul(4)).add(0.37)).r.mul(0.4).add(wide.r.mul(0.26)).add(driftRaw.mul(0.22)).add(fray.g.mul(0.12));
-    const cut = mix(float(0.62), float(0.34), share);
-    const blotched = smoothstep(cut.sub(0.07), cut.add(0.1), lumps).mul(mix(float(0.55), float(1), smoothstep(float(0.3), float(0.7), fray.r)));
-    return mix(grown, blotched, isBlotches).mul(step(float(0.005), share));
+    // (A species' patches are one kind or the other: only that kind is worked out.)
+    const out = float(0).toVar();
+    If(isBlotches.greaterThan(0.5), () => {
+      // Blotches are the other kind: not something that grew, but the ground showing through the grass, so
+      // they have no centres and no edges. Three lookups of the noise, turned and of unrelated sizes (one
+      // alone is the same four shapes in rows), cut where the species' share of the ground lies above.
+      const wide = noise(turn(xz, 0.814, 0.581).div(size.mul(9.48)).add(vec2(0.13, 0.71)));
+      const pushed = xz.add(vec2(wide.r, wide.a).sub(0.5).mul(size).mul(2.2));
+      const lumps = noise(pushed.div(size.mul(4)).add(0.37)).r.mul(0.4).add(wide.r.mul(0.26)).add(driftRaw.mul(0.22)).add(fray.g.mul(0.12));
+      const cut = mix(float(0.62), float(0.34), share);
+      out.assign(smoothstep(cut.sub(0.07), cut.add(0.1), lumps).mul(mix(float(0.55), float(1), smoothstep(float(0.3), float(0.7), fray.r))));
+    }).Else(() => {
+      const large = colonies(size.mul(6.3), 91.3, often, 0.1, 0.45);
+      const middling = colonies(size.mul(2.2), 3.7, often, 0.1, 0.45);
+      // (Seedlings: small ones, a hand or two across, thick about the colonies they came from and few elsewhere.
+      // None for runners, whose colonies have none: `seeds`.)
+      const seedlings = vec2(0, 0).toVar();
+      If(seeds.greaterThan(0.5), () => {
+        seedlings.assign(colonies(size.mul(0.7), 47.1, often.mul(float(0.12).add(max(large.y, middling.y).mul(1.1))), 0.12, 0.34));
+      });
+      out.assign(max(max(large.x, middling.x), seedlings.x.mul(0.85)).mul(mix(float(0.82), float(1), fray.r)));
+    });
+    return out;
   };
   /** A place's colour for being in a patch or not, as a multiplier. */
   const patchTint = (xz: Vec2, k: THREE.Node<"int">, edge: THREE.Node<"float"> = float(1e3)): Vec3 => mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), inPatch(xz, k, edge, false));
@@ -1439,6 +1473,10 @@ export function createGrass(options: GrassOptions): Grass {
    */
   const strainTint = (xz: Vec2, k: THREE.Node<"int">): Vec3 => {
     const amount = row(k, 18).x.mul(uStrains);
+    // (Only for a species in strains, in a season that shows them: on the rest it is nothing, nine cells' worth.)
+    return onlyWhere(amount.greaterThan(0), () => strainTone(xz, k, amount), vec3(1));
+  };
+  const strainTone = (xz: Vec2, k: THREE.Node<"int">, amount: THREE.Node<"float">): Vec3 => {
     const size = row(k, 18).y;
     const wander = noise(xz.div(size.mul(2.1)).add(vec2(0.47, 0.19)));
     const g = xz.add(vec2(wander.r, wander.g).sub(0.5).mul(size).mul(0.9)).div(size);
@@ -1481,6 +1519,9 @@ export function createGrass(options: GrassOptions): Grass {
    */
   const scorchTint = (xz: Vec2, k: THREE.Node<"int">, edge: THREE.Node<"float">): Vec3 => {
     const amount = row(k, 18).w.mul(uDrought);
+    return onlyWhere(amount.greaterThan(0), () => scorchTone(xz, edge, amount), vec3(1));
+  };
+  const scorchTone = (xz: Vec2, edge: THREE.Node<"float">, amount: THREE.Node<"float">): Vec3 => {
     const crown = smoothstep(float(0.05), float(0.6), dryAt(xz));
     const drift = smoothstep(float(0.5), float(0.75), noise(xz.div(6.1).add(0.91)).g);
     const spots = smoothstep(float(0.6), float(0.7), noise(xz.div(0.32).add(0.21)).b.mul(0.7).add(noise(xz.div(1.1).add(0.57)).r.mul(0.3)));
@@ -1529,13 +1570,17 @@ export function createGrass(options: GrassOptions): Grass {
   };
 
   const leavesLeft = (xz: Vec2, wide: THREE.Node<"float">): THREE.Node<"float"> => {
-    const away = length(vec3(xz.x.sub(uCamPos.x), uEyeUp, xz.y.sub(uCamPos.z)));
-    let gone = float(1) as THREE.Node<"float">;
-    for (const sq of fineSquares) {
-      const share = leavesAt(fromThick(xz), sq.range).mul(sq.uGate);
-      gone = gone.mul(float(1).sub(share));
-    }
-    return float(1).sub(gone).mul(leafSeen(wide, away));
+    // (None beyond the furthest square's reach: `leavesAt` is nothing there for every square.)
+    const reach = Math.max(0, ...fineSquares.map((sq) => sq.range * LEAF_REACH));
+    return onlyWhere(fromThick(xz).lessThan(reach), () => {
+      const away = length(vec3(xz.x.sub(uCamPos.x), uEyeUp, xz.y.sub(uCamPos.z)));
+      let gone = float(1) as THREE.Node<"float">;
+      for (const sq of fineSquares) {
+        const share = leavesAt(fromThick(xz), sq.range).mul(sq.uGate);
+        gone = gone.mul(float(1).sub(share));
+      }
+      return float(1).sub(gone).mul(leafSeen(wide, away));
+    }, float(0));
   };
 
   const ground = (xz: Vec2, forHost: boolean): Vec3 => {
@@ -1560,7 +1605,8 @@ export function createGrass(options: GrassOptions): Grass {
     // to tip (`STAND_MEAN`), which is what the last leaves and the far tufts turn to as they go.
     const under = mix(mix(rootDark(k), float(1), 0.4), mix(rootDark(k), float(1), STAND_MEAN), far).mul(uLook.w);
     // A fine grain, for the leaves' tips where the eye is too far off for leaves: gone by a dozen strides.
-    const grain = noise(xz.div(0.5)).b.sub(0.5).mul(0.1).mul(float(1).sub(smoothstep(float(3), float(14), distance(xz, vec2(uCamPos.x, uCamPos.z)))));
+    const flatAway = distance(xz, vec2(uCamPos.x, uCamPos.z));
+    const grain = onlyWhere(flatAway.lessThan(14), () => noise(xz.div(0.5)).b.sub(0.5).mul(0.1).mul(float(1).sub(smoothstep(float(3), float(14), flatAway))), float(0));
     // The ground's picture: what lies on it, as lighter and darker than the picture's own mean, so
     // the species' colour stands and, far off where the picture is its mean, nothing is left of it.
     // (Never from the very foot of its own stand: that dark is in `under` and in its picture already, and three
@@ -1572,7 +1618,6 @@ export function createGrass(options: GrassOptions): Grass {
     // copy repeated every tile is a pattern of dots from above. And gone by twenty metres, where its
     // smaller copies are down to the few blobs every tile has in the same places.)
     const turned = vec2(xz.x.mul(0.819).sub(xz.y.mul(0.574)), xz.x.mul(0.574).add(xz.y.mul(0.819)));
-    const which = smoothstep(float(0.35), float(0.65), noise(xz.div(5.3).add(0.71)).g);
     const toEye = vec3(uCamPos.x.sub(xz.x), uEyeUp, uCamPos.z.sub(xz.y));
     const eyeAway = length(toEye);
     // (And not before the picture is made: until then its mean is nothing, and a colour over nothing is not a number.)
@@ -1589,21 +1634,30 @@ export function createGrass(options: GrassOptions): Grass {
     const sunAlong = normalize(vec2(uSun.x, uSun.z).add(vec2(1e-4, 0)));
     const sunFlat = length(vec2(uSun.x, uSun.z));
     const turn = (v: Vec2) => vec2(v.x.mul(0.819).sub(v.y.mul(0.574)), v.x.mul(0.574).add(v.y.mul(0.819)));
-    const pileAt = (at: Vec2, tileM: THREE.Node<"float">, run: Vec2, sunWay: Vec2) => {
-      const tall0 = groundSample(at, k).w;
+    // (Its reads are made only where it shows, so they take the place's slopes from before that branch: the
+    // flat ground's, not the moved place's, which differ by the parallax alone.)
+    const pileAt = (at: Vec2, slopes: Slopes, tileM: THREE.Node<"float">, run: Vec2, sunWay: Vec2) => {
+      const tall0 = groundSample(at, k, slopes).w;
       const seenAt = at.add(run.mul(tall0.sub(0.5)).mul(pileTall).mul(uDetail.y).div(tileM));
-      const texel = groundSample(seenAt, k);
-      const sunward = groundSample(seenAt.add(sunWay.mul(RELIEF_STEP / GROUND_SIZE)), k).w;
+      const texel = groundSample(seenAt, k, slopes);
+      const sunward = groundSample(seenAt.add(sunWay.mul(RELIEF_STEP / GROUND_SIZE)), k, slopes).w;
       // (Metres risen per metre towards the sun.)
       const climb = sunward.sub(texel.w).mul(pileTall).div(tileM.mul(RELIEF_STEP / GROUND_SIZE)).mul(uDetail.y);
       const lit = clamp(uSun.y.sub(climb.mul(sunFlat)).div(max(uSun.y, float(0.15)).mul(pow(climb.mul(climb).add(1), float(0.5)))), float(0.6), float(1.15));
       return min(vec3(texel.x, texel.y, texel.z).div(max(vec3(mean.x, mean.y, mean.z), vec3(1e-4))), vec3(3)).mul(lit);
     };
-    const lying = mix(vec3(1), mix(
-      pileAt(xz.div(picture.y), picture.y, sightRun, sunAlong),
-      pileAt(turned.div(picture.y.mul(1.31)).add(vec2(0.37, 0.61)), picture.y.mul(1.31), turn(sightRun), turn(sunAlong)),
-      which,
-    ), shows);
+    const atOne = xz.div(picture.y);
+    const atTwo = turned.div(picture.y.mul(1.31)).add(vec2(0.37, 0.61));
+    const slopesOne: Slopes = [dFdx(atOne), dFdy(atOne)];
+    const slopesTwo: Slopes = [dFdx(atTwo), dFdy(atTwo)];
+    const lying = onlyWhere(shows.greaterThan(0), () => {
+      const which = smoothstep(float(0.35), float(0.65), noise(xz.div(5.3).add(0.71)).g);
+      return mix(vec3(1), mix(
+        pileAt(atOne, slopesOne, picture.y, sightRun, sunAlong),
+        pileAt(atTwo, slopesTwo, picture.y.mul(1.31), turn(sightRun), turn(sunAlong)),
+        which,
+      ), shows);
+    }, vec3(1));
     // (A stand in seed is paler for its heads, which is most of what is seen of it from any way off.)
     const heads = row(k, 6);
     const inSeed = mix(vec3(1), vec3(heads.x, heads.y, heads.z), row(k, 2).z.mul(row(k, 11).w).mul(0.5));
@@ -1626,7 +1680,7 @@ export function createGrass(options: GrassOptions): Grass {
     // of its mud. By distance only: a thin stand's ground stands in for its few leaves near the eye too, and
     // that is just where its soil shows.)
     const soil = mix(row(k, 19).xyz, vec3(1), farOff);
-    const stand = soil.mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k, m.edge)).mul(strainTint(xz, k)).mul(scorchTint(xz, k, m.edge)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow);
+    const stand = soil.mul(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k, m.edge)).mul(strainTint(xz, k)).mul(scorchTint(xz, k, m.edge)).mul(under).mul(mow ? laidShade(xz, layAt(xz, k)) : float(1)).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow);
     // (For a host with its own ground: that alone, with the grass's own shade and none of the world's, which is the host's to put on its ground itself.)
     // (As a share of the stand's own mean: the host's colour is the stand's as a whole, so far off, where the
     // ground stands in for the stand, this is 1 and the host's colour is what is seen. See `standTone`.)
