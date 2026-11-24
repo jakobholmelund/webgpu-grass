@@ -879,6 +879,10 @@ export function createGrass(options: GrassOptions): Grass {
     return vec4(sunPast(apart), known, toldApart, sunPast(apart.add(ownReach)));
   };
   const noiseTex = options.noise ?? makeNoiseTexture();
+  /** Whether the noise is ours to dispose: a host's own is the host's, and may be sampled by everything else it draws. */
+  const ownNoise = !options.noise;
+  /** Set by `dispose`: a ground picture still being made then stops before it uploads anything. */
+  let disposed = false;
   const table = makeSpeciesTable();
   const tableNode = uniformArray(table, "vec4");
   const row = (k: Int, slot: number) => tableNode.element(k.mul(SPECIES_SLOTS).add(slot)) as unknown as Vec4;
@@ -2410,6 +2414,7 @@ export function createGrass(options: GrassOptions): Grass {
       renderer.render(scene, above);
       renderer.setRenderTarget(before);
       const px = (await renderer.readRenderTargetPixelsAsync(target, 0, 0, GROUND_SIZE, GROUND_SIZE)) as Uint8Array;
+      if (disposed) return;
       // And again, each leaf painted by how high it is there: the pile's relief.
       mat.colorNode = vec4(vec3(clamp(positionWorld.y.div(s.height * PILE_TALL), float(0), float(1))), 1);
       mat.needsUpdate = true;
@@ -2418,6 +2423,7 @@ export function createGrass(options: GrassOptions): Grass {
       renderer.render(scene, above);
       renderer.setRenderTarget(before);
       const tall = (await renderer.readRenderTargetPixelsAsync(target, 0, 0, GROUND_SIZE, GROUND_SIZE)) as Uint8Array;
+      if (disposed) return;
       // (Drawn in linear light; kept, as every picture here is, in sRGB.)
       const out = new Uint8Array(GROUND_SIZE * GROUND_SIZE * 4);
       for (let i = 0; i < out.length; i += 4) {
@@ -3048,11 +3054,21 @@ export function createGrass(options: GrassOptions): Grass {
       for (const l of all) for (const a of l.attrs) a.dispose();
       for (const g of geometries) g.dispose();
       for (const m of materials) m.dispose();
-      noiseTex.dispose();
+      disposed = true;
+      if (ownNoise) noiseTex.dispose();
       leafTex.dispose();
       groundTex.dispose();
       ranks.dispose();
-      trackAttr.array = new Float32Array(4);
+      // (The trample grid's buffer is the renderer's until disposed: emptying its array frees nothing on the card.)
+      trackPass.dispose();
+      trackAttr.dispose();
+      for (const t of shadowTargets) {
+        t.depthTexture?.dispose();
+        t.dispose();
+      }
+      nearSites.compute.dispose();
+      farSites.compute.dispose();
+      if (canopyQuad) (canopyQuad.material as THREE.Material).dispose();
       canopyTarget?.dispose();
     },
   };
