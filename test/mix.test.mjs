@@ -76,6 +76,15 @@ test("the same place is the same grass every time", () => {
   for (let k = 0; k < 500; k++) assert.equal(mixAt(mix, a, k * 1.7, k * -0.9), mixAt(mix, b, k * 1.7, k * -0.9));
 });
 
+test("a chance the host gives is the one used", () => {
+  const given = { species: 0, members: [{ species: 1, share: 0.12, patchSize: 1, chance: 0.2 }, { species: 2, share: 0.3, patchSize: 1.5 }] };
+  const plain = { species: 0, members: [{ species: 1, share: 0.12, patchSize: 1 }, { species: 2, share: 0.3, patchSize: 1.5 }] };
+  const a = mixChances(given);
+  assert.equal(a[0], 0.2);
+  // (The others are worked out as they would be: by the shares left, not by the given chance's cover.)
+  assert.equal(a[1], mixChances(plain)[1]);
+});
+
 test("a mix that cannot be had is refused", () => {
   assert.throws(() => mixChances({ species: 0, members: [{ species: 1, share: 0.7, patchSize: 1 }, { species: 2, share: 0.4, patchSize: 1 }] }), /whole stand/);
   assert.throws(() => mixChances({ species: 0, members: [{ species: 1, share: 0.9, patchSize: 1 }] }), /at most/);

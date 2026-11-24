@@ -182,6 +182,11 @@ grasses of a mix run into each other at a patch's edge as far as each
 lets its edge stray (`edgeBlend`). A member costs nine looks at a hash for
 every place the grass asks about.
 
+A member's `chance` (that a square of its has a colony) may be given
+instead of worked out from its share: a host whose physics plays the same
+patches (bare ground a ball lies on) gives the physics' own number, so the
+two have the very same colonies.
+
 The colonies are worked out by plain arithmetic in `src/mixshare.ts`,
 which the shaders' half follows step for step: `mixAt(mix, chances, x, z)`
 says which grass grows at a place, and `test/mix.test.mjs` holds each

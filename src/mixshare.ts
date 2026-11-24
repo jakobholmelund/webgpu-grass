@@ -17,6 +17,12 @@ export interface MixMember {
   species: number;
   share: number;
   patchSize: number;
+  /**
+   * The chance that a square of its has a colony, if the host knows it already: from a twin of this
+   * arithmetic elsewhere (a physics that plays the same patches, say), so both have the very same
+   * colonies and not two numbers a rounding apart. Left out: worked out here from `share` (`mixChances`).
+   */
+  chance?: number;
 }
 
 /** A stand of several grasses: where the map says `species` (the lead), its members take their shares of the ground in patches. */
@@ -112,7 +118,7 @@ export function mostCover(j: number, size = 1): number {
  */
 export function mixChances(mix: GrassMix): number[] {
   // (Some 70 ms a member: once for each mix a page asks about.)
-  const key = JSON.stringify(mix.members.map((m) => [m.share, m.patchSize]));
+  const key = JSON.stringify(mix.members.map((m) => [m.share, m.patchSize, m.chance ?? null]));
   const known = worked.get(key);
   if (known) return known.slice();
   let left = 1;
@@ -123,6 +129,7 @@ export function mixChances(mix: GrassMix): number[] {
     if (left - m.share < -1e-9) throw new Error(`The members of a mix take more than the whole stand`);
     if (want > most) throw new Error(`A member can take at most ${Math.round(most * 100)}% of what the members before it leave; this one wants ${Math.round(want * 100)}%`);
     left -= m.share;
+    if (m.chance !== undefined) return Math.min(1.01, Math.max(0, m.chance));
     if (want <= 0) return 0;
     let lo = 0;
     let hi = 1.01;
