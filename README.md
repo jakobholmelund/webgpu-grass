@@ -78,7 +78,11 @@ grass.update(renderer, camera, timeSeconds, lookAt);
   makes its leaves round, stiff stems and `tussock` stands it in tussocks
   with open ground between, which together are a rush (`MORE_PLANTS.rush`,
   soft rush, for a marsh; the lab's "Soft rush" scene), and `flower` puts a
-  rush's brown tuft of flowers on the side of some of its stems.
+  rush's brown tuft of flowers on the side of some of its stems. Up to
+  sixteen species (`MAX_SPECIES`). What a species costs is mostly its
+  ground picture, 4 MB here and a third more on the graphics card, and the
+  grass keeps as many as it is given species; `speciesMap` keeps a channel
+  to each row its map may hold (`rows`), four to a texture.
 - **Style** (`grass.style`) is how it is drawn, apart from what it is.
 - **Light and wind** (`grass.environment`) are the host's to set.
 - **The ground** is the host's mesh. `grass.groundColor(xz)` and

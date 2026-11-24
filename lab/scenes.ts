@@ -6,6 +6,7 @@
 // The first eight are a golf course's surfaces, short to tall, one to a scene.
 
 import { MORE_PLANTS, MORE_TURF, type Species, TURF_SPECIES, cloneSpecies } from "../src/index";
+import { type PlotLayout } from "./world";
 
 export interface Scene {
   id: string;
@@ -15,6 +16,8 @@ export interface Scene {
   species: Species[];
   /** The species (its row) that fills the plot, or -1 for the mixed plot. */
   plot: number;
+  /** How the mixed plot is laid out, if not as a golf course's turf is (`TURF_LAYOUT`). */
+  layout?: PlotLayout;
   /** The species the inspector opens on. */
   row: number;
   /** "The plot", or what stands on the bench: "One blade", "One plant", "One tuft", "One clump". */

@@ -777,17 +777,44 @@ export function createGrass(options: GrassOptions): Grass {
   const leafLayers = new Map<string, number>();
 
   // The ground's pictures: a layer to a species (its row), each with smaller copies of itself for distance.
-  const groundPixels = new Uint8Array(GROUND_SIZE * GROUND_SIZE * 4 * MAX_SPECIES).fill(128);
-  const groundTex = new THREE.DataArrayTexture(groundPixels, GROUND_SIZE, GROUND_SIZE, MAX_SPECIES);
-  groundTex.format = THREE.RGBAFormat;
-  groundTex.type = THREE.UnsignedByteType;
-  groundTex.colorSpace = THREE.SRGBColorSpace;
-  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
-  groundTex.magFilter = THREE.LinearFilter;
-  groundTex.minFilter = THREE.LinearMipmapLinearFilter;
-  groundTex.generateMipmaps = true;
-  groundTex.anisotropy = 8;
-  groundTex.needsUpdate = true;
+  // (As many layers as there are species, not as many as there could be: a layer is 4 MB here and a
+  // third more on the card for its smaller copies. A longer list given later grows it.)
+  const makeGroundTex = (px: Uint8Array, layers: number) => {
+    const tex = new THREE.DataArrayTexture(px, GROUND_SIZE, GROUND_SIZE, layers);
+    tex.format = THREE.RGBAFormat;
+    tex.type = THREE.UnsignedByteType;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.anisotropy = 8;
+    tex.needsUpdate = true;
+    return tex;
+  };
+  let groundLayers = Math.max(1, Math.min(MAX_SPECIES, options.species.length));
+  let groundPixels = new Uint8Array(GROUND_SIZE * GROUND_SIZE * 4 * groundLayers).fill(128);
+  let groundTex = makeGroundTex(groundPixels, groundLayers);
+  /** Every lookup of the ground's pictures, so a grown texture can be put in their place. */
+  const groundNodes: THREE.TextureNode[] = [];
+  const groundSample = (at: Vec2, k: Int) => {
+    const n = texture(groundTex, at);
+    groundNodes.push(n);
+    return n.depth(k) as unknown as Vec4;
+  };
+  /** Make room for the ground pictures of `rows` species. */
+  const growGround = (rows: number) => {
+    if (rows <= groundLayers) return;
+    const layers = Math.min(MAX_SPECIES, rows);
+    const px = new Uint8Array(GROUND_SIZE * GROUND_SIZE * 4 * layers).fill(128);
+    px.set(groundPixels);
+    const old = groundTex;
+    groundPixels = px;
+    groundLayers = layers;
+    groundTex = makeGroundTex(px, layers);
+    for (const n of groundNodes) n.value = groundTex;
+    old.dispose();
+  };
   /** For each species' row, its ground picture's mean colour (linear), or null if it has no picture. */
   const groundOf: ({ mean: [number, number, number] } | null)[] = Array.from({ length: MAX_SPECIES }, () => null);
   const flowers: Record<string, Flower> = { ...FLOWERS, ...(options.flowers ?? {}) };
@@ -796,6 +823,7 @@ export function createGrass(options: GrassOptions): Grass {
   const setGroundLayer = (rowIndex: number, px: Uint8Array | Uint8ClampedArray | null) => {
     if (px === null) groundOf[rowIndex] = null;
     else {
+      growGround(rowIndex + 1);
       groundPixels.set(px, rowIndex * GROUND_SIZE * GROUND_SIZE * 4);
       const sum = [0, 0, 0];
       for (let i = 0; i < px.length; i += 4) for (let c = 0; c < 3; c++) sum[c] += SRGB_TO_LINEAR[px[i + c]];
@@ -1145,10 +1173,10 @@ export function createGrass(options: GrassOptions): Grass {
     const sunFlat = length(vec2(uSun.x, uSun.z));
     const turn = (v: Vec2) => vec2(v.x.mul(0.819).sub(v.y.mul(0.574)), v.x.mul(0.574).add(v.y.mul(0.819)));
     const pileAt = (at: Vec2, tileM: THREE.Node<"float">, run: Vec2, sunWay: Vec2) => {
-      const tall0 = (texture(groundTex, at).depth(k) as unknown as Vec4).w;
+      const tall0 = groundSample(at, k).w;
       const seenAt = at.add(run.mul(tall0.sub(0.5)).mul(pileTall).mul(uDetail.y).div(tileM));
-      const texel = texture(groundTex, seenAt).depth(k) as unknown as Vec4;
-      const sunward = (texture(groundTex, seenAt.add(sunWay.mul(RELIEF_STEP / GROUND_SIZE))).depth(k) as unknown as Vec4).w;
+      const texel = groundSample(seenAt, k);
+      const sunward = groundSample(seenAt.add(sunWay.mul(RELIEF_STEP / GROUND_SIZE)), k).w;
       // (Metres risen per metre towards the sun.)
       const climb = sunward.sub(texel.w).mul(pileTall).div(tileM.mul(RELIEF_STEP / GROUND_SIZE)).mul(uDetail.y);
       const lit = clamp(uSun.y.sub(climb.mul(sunFlat)).div(max(uSun.y, float(0.15)).mul(pow(climb.mul(climb).add(1), float(0.5)))), float(0.6), float(1.15));

@@ -7,6 +7,7 @@
 // distance fields) writes a source of its own with the same `sample`.
 
 import * as THREE from "three/webgpu";
+import { MAX_SPECIES } from "./species";
 import { abs, clamp, cos, dot, float, floor, fract, int, max, min, mix, normalize, sin, smoothstep, step, storage, texture, uniform, vec2, vec3 } from "three/tsl";
 
 type Vec2 = THREE.Node<"vec2">;
@@ -120,8 +121,6 @@ export interface GrassMap {
 
 /** A map's cells are blurred over about this many of them to either side, which is what rounds its steps into a line. */
 const SMOOTH_CELLS = 1.5;
-/** Channels: one to each species' row, and one for ground where nothing grows. */
-const CHANNELS = 9;
 
 export interface SpeciesMapSource extends MapSource {
   /** Replace the map's species numbers (the same size of map), as after painting on it. */
@@ -129,7 +128,10 @@ export interface SpeciesMapSource extends MapSource {
 }
 
 /**
- * A map source from a grid of species numbers.
+ * A map source from a grid of species numbers. It keeps a channel to each species' row the map may hold
+ * and one for ground where nothing grows, four to a texture: `rows` says how many rows that is (the
+ * highest number in the grid and one, if not said). A number from `rows` up is ground where nothing grows,
+ * and so it stays if it is painted in later: a map that will be painted with more species says so.
  *
  * A grid's borders are steps a cell wide. So the grid is not looked up as
  * it is: each species' cells are spread into a smooth field of how much of
@@ -140,10 +142,15 @@ export interface SpeciesMapSource extends MapSource {
  * the border is. Features narrower than three or four cells are smoothed
  * away with the steps.
  */
-export function speciesMap(m: GrassMap): SpeciesMapSource {
+export function speciesMap(m: GrassMap, rows?: number): SpeciesMapSource {
   const { nx, nz, cell } = m;
   const n = nx * nz;
-  const data = [0, 1, 2].map(() => new Uint8Array(n * 4));
+  let highest = -1;
+  for (let k = 0; k < n; k++) if (m.ids[k] < MAX_SPECIES && m.ids[k] > highest) highest = m.ids[k];
+  const kept = Math.min(MAX_SPECIES, Math.max(1, rows ?? highest + 1));
+  /** Channels: one to each species' row, and one for ground where nothing grows. */
+  const CHANNELS = kept + 1;
+  const data = Array.from({ length: Math.ceil(CHANNELS / 4) }, () => new Uint8Array(n * 4));
   const textures = data.map((d) => {
     const tex = new THREE.DataTexture(d, nx, nz, THREE.RGBAFormat, THREE.UnsignedByteType);
     tex.magFilter = tex.minFilter = THREE.LinearFilter;

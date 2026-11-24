@@ -160,7 +160,7 @@ export interface Species {
 export type TextureMode = "detail" | "color";
 
 /** Rows in the table. A map's species numbers are below this; `NO_GRASS` is not. */
-export const MAX_SPECIES = 8;
+export const MAX_SPECIES = 16;
 /** Four numbers to a slot, this many slots to a species. */
 export type PatchKind = "colonies" | "blotches";
 export const SPECIES_SLOTS = 17;

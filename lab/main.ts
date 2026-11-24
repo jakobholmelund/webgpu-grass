@@ -15,7 +15,7 @@ import { dot, float, length, max, mix, normalWorld, normalize, positionGeometry,
 import GUI from "three/addons/libs/lil-gui.module.min.js";
 import { MAX_LEAF_TEXTURES, TURF_SPECIES, type Species, type SpecimenKind, checkSpecies, cloneSpecies, createGrass, heightAt, heightGrid, mowStripes, speciesMap, thingMiddleFor } from "../src/index";
 import { LEAF_ART } from "./leafart";
-import { makeHeights, makeMap } from "./world";
+import { type PlotLayout, TURF_LAYOUT, makeHeights, makeMap } from "./world";
 import { SCENES, type Scene } from "./scenes";
 import { REFERENCES } from "./reference";
 
@@ -25,6 +25,8 @@ const STORE_KEY = "grass-lab-preset-v3";
 /** Which lab this is, shown in the status strip: so a picture of it says what was drawn. Change it with the grass. */
 const LAB_BUILD = "b66";
 const query = new URLSearchParams(location.search);
+/** The most species a scene of the lab's has. */
+const LAB_ROWS = 11;
 
 interface Preset {
   version: 1;
@@ -91,8 +93,10 @@ async function start() {
   const plotAsked = query.get("plot");
   const field = { plot: plotAsked !== null && Number.isInteger(Number(plotAsked)) ? Number(plotAsked) : -1 };
   let species = cloneSpecies(TURF_SPECIES);
-  let plotGrid = makeMap(field.plot >= 0 ? field.plot : null, species.length);
-  const map = speciesMap(plotGrid);
+  let plotLayout: PlotLayout = TURF_LAYOUT;
+  let plotGrid = makeMap(field.plot >= 0 ? field.plot : null, species.length, plotLayout);
+  // (Room for as many species as the lab's largest scene has, and no more: a channel to each, four to a texture.)
+  const map = speciesMap(plotGrid, LAB_ROWS);
   // (Mown up and down the strip of turf, a little off its line, by a mower two and a half metres wide.)
   const mow = mowStripes({ width: 2.5, heading: 12 });
   // The host's own light over the grass (`GrassOptions.world`): here, clouds' shadows drifting across.
@@ -432,7 +436,7 @@ async function start() {
   const tallLabel = (m: number) => (m < 0.02 ? `${(m * 1000).toFixed(1).replace(/\.0$/, "")} mm` : `${(m * 100).toFixed(0)} cm`);
   const setPlot = (row: number) => {
     field.plot = row;
-    plotGrid = makeMap(row >= 0 ? row : null, species.length);
+    plotGrid = makeMap(row >= 0 ? row : null, species.length, plotLayout);
     map.set(plotGrid.ids);
     el("fill").setAttribute("aria-pressed", String(row >= 0));
   };
@@ -703,6 +707,7 @@ async function start() {
     if (!sc) return;
     at.scene = SCENES.indexOf(sc);
     species = cloneSpecies(sc.species);
+    plotLayout = sc.layout ?? TURF_LAYOUT;
     groundFromFile.clear();
     grass.setSpecies(species);
     Object.assign(grass.style, sc.style ?? { broad: 0, flat: 0 });
