@@ -300,6 +300,14 @@ const LAYER_SIDE = 332;
 const SWING_WAVE_M = 1.8;
 /** How far (radians of its swing, either way) a leaf is out of step with those about it. */
 const SWING_OWN_RAD = 0.9;
+/** How fast the gusts travel downwind (m/s): this and this much more for each metre a second of wind. */
+const GUST_PACE = 1.2;
+const GUST_PACE_PER_MS = 0.55;
+/**
+ * Where the gusts' running offset wraps (m): a whole number of repeats of both noises they are read from
+ * (61 m, and 19 m over 1.35), so the wrap shows no seam.
+ */
+const GUST_REPEAT_M = 61 * 380;
 /** How long a dead leaf is beside a live one of the same plant. */
 const DEAD_LEAF_TALL = 0.62;
 /** How much taller than the leaves a stem in seed stands, where only some are (`Species.seedShare`). */
@@ -751,6 +759,15 @@ export function createGrass(options: GrassOptions): Grass {
   const uShadeTint = uniform(new THREE.Vector3(0.6, 0.7, 0.88));
   const uWind = uniform(new THREE.Vector3(1, 0, 3));
   const uTime = uniform(0);
+  /**
+   * The wind's running totals, kept on the CPU from one frame to the next (see `update`): how far the gusts
+   * have travelled (x, z, m), and a phase for the air's slow turning across z. A gust field placed by time
+   * times the wind's speed would jump, all of it at once, whenever the wind's speed or heading changed.
+   */
+  const uGust = uniform(new THREE.Vector4());
+  let lastTimeS: number | null = null;
+  /** Running phases (radians): the leaves' swing, a flower's nod, the gusts' flutter, the air's turning across x. */
+  const uPhase = uniform(new THREE.Vector4());
   const uCamPos = uniform(new THREE.Vector3());
   const uCamFwd = uniform(new THREE.Vector2(0, 1));
   /** broad, flat. */
@@ -1481,7 +1498,7 @@ export function createGrass(options: GrassOptions): Grass {
     // swing runs downwind through the stand in waves a stride or two long. Each wholly to its own beat,
     // a stand does not sway: it shimmers.)
     const swingWave = dot(xz, vec2(uWind.x, uWind.y)).mul(-6.2832 / SWING_WAVE_M).add(sin(xz.x.mul(1.7).add(xz.y.mul(0.9))).mul(1.3)).add(sin(xz.y.mul(2.1).sub(xz.x.mul(0.6))).mul(1.1));
-    const swingAt = uTime.mul(float(1.3).add(uWind.z.mul(0.22))).add(swingWave).add(hashCell(hcell.add(b.mul(5.3).add(41.0))).sub(0.5).mul(SWING_OWN_RAD * 2)).sub(gy.mul(1.4));
+    const swingAt = uPhase.x.add(swingWave).add(hashCell(hcell.add(b.mul(5.3).add(41.0))).sub(0.5).mul(SWING_OWN_RAD * 2)).sub(gy.mul(1.4));
     // (And in still air nothing swings at all.)
     // (Only grass long enough to swing: mown turf up to the first cut stands still in any wind, rough hardly stirs, and from deep rough up it all goes.)
     const swingBy = smoothstep(float(SWING_FROM_M), float(SWING_FULL_M), row(k, 0).x).mul(float(1).sub(row(k, 2).w.mul(0.75))).mul(smoothstep(float(0), float(1.5), uWind.z).mul(0.014).add(min(uWind.z.div(8), float(1.5)).mul(0.034))).mul(o.field && fine ? freeOfThings(root.add(vec3(0, tall.mul(0.5), 0))) : float(1));
@@ -1883,14 +1900,14 @@ export function createGrass(options: GrassOptions): Grass {
         // at about the wind's own pace, and the grass lies down as each crosses it.
         const wDir = normalize(vec2(uWind.x, uWind.y).add(vec2(1e-4, 0)));
         const windy = clamp(uWind.z.div(8.0), float(0), float(1.7));
-        const gustAt = xz.sub(wDir.mul(uTime.mul(float(1.2).add(uWind.z.mul(0.55)))));
+        const gustAt = xz.sub(vec2(uGust.x, uGust.y));
         const gustBroad = noise(gustAt.div(61.0)).r;
         const gustSmall = noise(gustAt.mul(1.35).div(19.0).add(0.43)).g;
         // (A flutter on the gusts: plants that stand together flutter nearly together, as they swing.)
-        const flutter = sin(uTime.mul(2.3).add(sin(xz.x.mul(1.9).add(xz.y.mul(1.1))).mul(1.4)).add(sin(xz.y.mul(2.3).sub(xz.x.mul(0.7))).mul(1.2)).add(r0.sub(0.5).mul(SWING_OWN_RAD * 2))).mul(0.06);
+        const flutter = sin(uPhase.z.add(sin(xz.x.mul(1.9).add(xz.y.mul(1.1))).mul(1.4)).add(sin(xz.y.mul(2.3).sub(xz.x.mul(0.7))).mul(1.2)).add(r0.sub(0.5).mul(SWING_OWN_RAD * 2))).mul(0.06);
         const gust = clamp(smoothstep(float(0.3), float(0.72), gustBroad.mul(0.68).add(gustSmall.mul(0.32))).add(flutter), float(0), float(1));
         // (The air's slow turning about, which is there in any wind and not in none.)
-        const swirl = vec2(cos(uTime.mul(1.2).add(xz.x.mul(0.28))), sin(uTime.mul(1.05).add(xz.y.mul(0.25)))).mul(0.06).mul(smoothstep(float(0), float(1.5), uWind.z));
+        const swirl = vec2(cos(uPhase.w.add(xz.x.mul(0.28))), sin(uGust.z.add(xz.y.mul(0.25)))).mul(0.06).mul(smoothstep(float(0), float(1.5), uWind.z));
         // Wind moves what stands tall enough to be moved, and is not too stiff.
         const windTakes = smoothstep(float(0.075), float(0.17), tall0).mul(float(1).sub(stiffness)).mul(1.4);
         const lay = layAt(xz, k);
@@ -2258,9 +2275,9 @@ export function createGrass(options: GrassOptions): Grass {
       const tall = max(frow(f, 1).y.mul(mix(float(0.8), float(1.25), luck)), row(k, 0).x.mul(mix(float(1.25), float(1.6), luck)));
       // The wind: it nods downwind, further in a gust, and swings a little about that.
       const wDir = normalize(vec2(uWind.x, uWind.y).add(vec2(1e-4, 0)));
-      const gustAt = xz.sub(wDir.mul(uTime.mul(float(1.2).add(uWind.z.mul(0.55)))));
+      const gustAt = xz.sub(vec2(uGust.x, uGust.y));
       const gust = smoothstep(float(0.3), float(0.72), noise(gustAt.div(61.0)).r);
-      const swing = sin(uTime.mul(float(2.1).add(uWind.z.mul(0.2))).add(luck.mul(6.2832)).sub(dot(xz, wDir).mul(3.2)));
+      const swing = sin(uPhase.y.add(luck.mul(6.2832)).sub(dot(xz, wDir).mul(3.2)));
       const nod = wDir.mul(clamp(uWind.z.div(8), float(0), float(1.7)).mul(float(0.22).add(gust.mul(0.5))).add(swing.mul(0.1).mul(min(uWind.z.div(4), float(1))))).mul(tall).mul(0.4);
       const head = root.add(vec3(nod.x, tall, nod.y));
       // (The head faces up the stalk, each tipped a little its own way.)
@@ -2562,6 +2579,19 @@ export function createGrass(options: GrassOptions): Grass {
       // (A perspective camera's projection has 1 / tan(half its field of view) at [5].)
       renderer.getDrawingBufferSize(bufferSize);
       uPixel.value = 2 / Math.max(1e-3, camera.projectionMatrix.elements[5]) / Math.max(1, bufferSize.y);
+      // The wind's running totals: what it has done since the last frame, at the pace it blows now.
+      const dt = lastTimeS === null ? 0 : Math.min(0.25, Math.max(0, timeS - lastTimeS));
+      lastTimeS = timeS;
+      const w = uWind.value;
+      const wLen = Math.hypot(w.x, w.y) || 1;
+      const travel = (GUST_PACE + GUST_PACE_PER_MS * w.z) * dt;
+      const g = uGust.value;
+      g.x = (((g.x + (w.x / wLen) * travel) % GUST_REPEAT_M) + GUST_REPEAT_M) % GUST_REPEAT_M;
+      g.y = (((g.y + (w.y / wLen) * travel) % GUST_REPEAT_M) + GUST_REPEAT_M) % GUST_REPEAT_M;
+      const turn = (phase: number, rate: number) => (phase + rate * dt) % (Math.PI * 2);
+      g.z = turn(g.z, 1.05);
+      const ph = uPhase.value;
+      ph.set(turn(ph.x, 1.3 + 0.22 * w.z), turn(ph.y, 2.1 + 0.2 * w.z), turn(ph.z, 2.3), turn(ph.w, 1.2));
       uTime.value = timeS;
       uSun.value.normalize();
       uStyle.value.set(style.broad, style.flat);
