@@ -2403,6 +2403,9 @@ export function createGrass(options: GrassOptions): Grass {
     return baking;
   };
   const bakeOne = async (renderer: THREE.WebGPURenderer, rowIndex: number) => {
+    // (A picture asked for before the grass was disposed waits its turn behind the others: by then it may be
+    // gone, and drawing it would take back the textures just freed.)
+    if (disposed) return;
     const s = current[rowIndex];
     if (!s) return;
     const tile = Math.max(0.05, s.groundTile);
