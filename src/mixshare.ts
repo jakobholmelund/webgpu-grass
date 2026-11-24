@@ -32,6 +32,16 @@ const SIZE_SPREAD = 0.8;
 const INSET = 0.15;
 /** Squares hash their numbers within a repeat of this many: the hash loses its evenness on large ones. */
 const REPEAT = 1024;
+/**
+ * A colony is not a disc: its edge goes in and out round it (two lobes and a bulge, each turned its own
+ * way: shares of its reach), and plant by plant at its edge some stand in and some out (`FRAY`, a share of
+ * its reach either way), as a patch grown from runners and seed has a ragged edge.
+ */
+const LOBES = 0.2;
+const BULGE = 0.12;
+const FRAY = 0.16;
+/** The scale of the fray's noise: finer than a plant's spacing, so it is a plant's own. */
+const FRAY_SCALE = 29.7;
 
 const f = Math.fround;
 
@@ -60,10 +70,24 @@ export function inColony(x: number, z: number, size: number, kept: number, salt:
       const centreX = (cx + INSET + ox * (1 - 2 * INSET)) * size;
       const centreZ = (cz + INSET + oz * (1 - 2 * INSET)) * size;
       const reach = size * REACH * Math.exp((hashCell(f(hx + f(4.1)), f(hz + f(4.1))) - 0.5) * SIZE_SPREAD);
-      if ((x - centreX) ** 2 + (z - centreZ) ** 2 <= reach * reach) return true;
+      const d = Math.hypot(x - centreX, z - centreZ);
+      if (d > reach * (1 + LOBES + BULGE + FRAY)) continue;
+      if (d <= reach * (1 - LOBES - BULGE - FRAY)) return true;
+      if (edgeAt(x, z, (x - centreX) / d, (z - centreZ) / d, hashCell(f(hx + f(5.3)), f(hz + f(5.3))), hashCell(f(hx + f(6.7)), f(hz + f(6.7)))) * reach >= d) return true;
     }
   }
   return false;
+}
+
+/**
+ * How far a colony's edge is from its middle in a direction (`nx`, `nz`, of length one), as a share of its
+ * reach, its lobes and bulge turned by its own two numbers (`a`, `b`, 0..1), frayed by the place itself.
+ */
+export function edgeAt(x: number, z: number, nx: number, nz: number, a: number, b: number): number {
+  const lobes = 2 * (nx * Math.cos(a * 6.2832) + nz * Math.sin(a * 6.2832)) ** 2 - 1;
+  const bulge = nx * Math.cos(b * 6.2832) + nz * Math.sin(b * 6.2832);
+  const fray = hashCell(f(x * FRAY_SCALE), f(z * FRAY_SCALE)) * 2 - 1;
+  return 1 + LOBES * lobes + BULGE * bulge + FRAY * fray;
 }
 
 /** The share of the ground a member's colonies cover for a chance `kept`, over a fixed spread of places. */

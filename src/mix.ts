@@ -2,7 +2,7 @@
 // at a place in it (the arithmetic, and why, is mixshare.ts, the twin of what is worked out here).
 
 import * as THREE from "three/webgpu";
-import { distance, exp, float, floor, max, mix, mod, step, vec2 } from "three/tsl";
+import { cos, dot, exp, float, floor, length, max, mix, mod, normalize, sin, step, vec2 } from "three/tsl";
 import { type MapSource, NO_GRASS } from "./field";
 import { type GrassMix, memberSalt, mixChances } from "./mixshare";
 import { hashCell } from "./placement";
@@ -22,7 +22,17 @@ function inColony(xz: Vec2, size: number, kept: number, salt: number): Float {
       const there = step(float(kept), hashCell(hc.add(2.9))).oneMinus();
       const centre = cell.add(vec2(hashCell(hc.add(1.3)), hashCell(hc.add(7.9))).mul(0.7).add(0.15)).mul(size);
       const reach = exp(hashCell(hc.add(4.1)).sub(0.5).mul(0.8)).mul(size * 0.5);
-      inside.assign(max(inside, step(distance(xz, centre), reach).mul(there)));
+      // (Its ragged edge: mixshare.ts `edgeAt`, its twin.)
+      const off = xz.sub(centre);
+      const n = normalize(off.add(vec2(1e-6, 0)));
+      const a = hashCell(hc.add(5.3)).mul(6.2832);
+      const b = hashCell(hc.add(6.7)).mul(6.2832);
+      const along = dot(n, vec2(cos(a), sin(a)));
+      const edge = float(1)
+        .add(along.mul(along).mul(2).sub(1).mul(0.2))
+        .add(dot(n, vec2(cos(b), sin(b))).mul(0.12))
+        .add(hashCell(xz.mul(29.7)).mul(2).sub(1).mul(0.16));
+      inside.assign(max(inside, step(length(off), reach.mul(edge)).mul(there)));
     }
   }
   return inside;

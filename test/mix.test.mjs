@@ -37,8 +37,9 @@ for (const [name, mix] of Object.entries(MIXES)) {
 }
 
 test("a member's patches are about its patch size across", () => {
-  // Along lines through the stand, the runs of the member's ground: their mean length is a patch's breadth
-  // cut at random, which is pi/4 of a round patch's breadth, and less where patches are cut near their edge.
+  // Along lines through the stand, the runs of the member's ground, as the eye takes them: a gap of a few
+  // plants at a ragged edge (under 15 cm) is part of the patch. Their mean length is a patch's breadth cut
+  // at random, which is pi/4 of a round patch's breadth, and less where patches are cut near their edge.
   for (const size of [1, 2.5]) {
     const mix = { species: 0, members: [{ species: 1, share: 0.2, patchSize: size }] };
     const chances = mixChances(mix);
@@ -46,12 +47,19 @@ test("a member's patches are about its patch size across", () => {
     let total = 0;
     for (let line = 0; line < 200; line++) {
       let run = 0;
+      let gap = 0;
       for (let x = 0; x < 300; x += 0.02) {
-        if (mixAt(mix, chances, x, line * 7.31) === 1) run += 0.02;
-        else if (run > 0) {
-          runs++;
-          total += run;
-          run = 0;
+        if (mixAt(mix, chances, x, line * 7.31) === 1) {
+          run += gap + 0.02;
+          gap = 0;
+        } else if (run > 0) {
+          gap += 0.02;
+          if (gap > 0.15) {
+            runs++;
+            total += run;
+            run = 0;
+            gap = 0;
+          }
         }
       }
     }
