@@ -444,6 +444,8 @@ async function start() {
     field.plot = row;
     plotGrid = makeMap(row >= 0 ? row : null, species.length, plotLayout);
     map.set(plotGrid.ids);
+    // (The grass's picture of how tall it stands is drawn again only when told: shadows and the lie follow the new plot.)
+    grass.mapChanged();
     el("fill").setAttribute("aria-pressed", String(row >= 0));
   };
   el("fill").addEventListener("click", () => setPlot(field.plot >= 0 ? -1 : chosen.row));

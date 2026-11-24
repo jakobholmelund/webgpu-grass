@@ -512,6 +512,12 @@ export interface Grass {
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
+   * Say that the map (`GrassOptions.map`) has changed what grows where: the grass's picture of how tall it
+   * stands, which its shadows and the lie of the ground are found from, is drawn again on the next frame. (It is
+   * drawn again now and then in any case, for a host that does not say.)
+   */
+  mapChanged(): void;
+  /**
    * What lies in the grass (a ball, a stone): at most `MAX_THINGS` spheres. No leaf goes through one:
    * the grass under it is pressed down beneath it, a leaf that would cross it is carried round it, and
    * the leaves about it are held still. Give them again whenever one moves; none, to clear them.
@@ -1024,7 +1030,10 @@ export function createGrass(options: GrassOptions): Grass {
   /** For each species' row, its ground picture's mean colour (linear), or null if it has no picture. */
   const groundOf: ({ mean: [number, number, number] } | null)[] = Array.from({ length: MAX_SPECIES }, () => null);
   const flowers: Record<string, Flower> = { ...FLOWERS, ...(options.flowers ?? {}) };
+  /** Whether the canopy's picture is to be drawn again: at the start, and when the species or the map change. */
+  let canopyDirty = 2;
   const repack = () => {
+    canopyDirty = 2;
     const used = current.flatMap((s) => (s.blooms ?? []).slice(0, MAX_BLOOMS).filter((b) => b.perM2 > 0 && flowers[b.flower]).map((b) => b.flower));
     const flowerAt = packFlowers(used, flowerTable, flowers);
     anyBlooms = flowerAt.size > 0;
@@ -1052,6 +1061,9 @@ export function createGrass(options: GrassOptions): Grass {
     repack();
   };
   let current: readonly Species[] = options.species;
+  /** The far tufts' materials and the mask each goes without while no species has a cut-out leaf picture. */
+  const tuftMasks: { mat: THREE.MeshBasicNodeMaterial; mask: THREE.Node<"bool"> }[] = [];
+  const anyCutout = (list: readonly Species[]) => list.some((sp) => sp.textureCutout && !!sp.leafTexture);
 
   const noise = (uv: Vec2) => texture(noiseTex, uv).level(float(0)) as unknown as Vec4;
 
@@ -1966,7 +1978,8 @@ export function createGrass(options: GrassOptions): Grass {
     const vUv = varying(out.uv, `vGrassUv${name}`);
     const vAgainst = varying(out.against, `vGrassAgainst${name}`);
     const texel = texture(leafTex, vec2(vUv.x, vUv.y)).depth(int(vUv.z.add(0.5))) as unknown as Vec4;
-    const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
+    // (Without the scene's fog where the host gives its own air: it is in the colour already, `world.air`.)
+    const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide, fog: !options.world?.air });
     mat.positionNode = out.pos;
     // A leaf's own surface, drawn pixel by pixel across it: nothing of it shows on a leaf a few pixels
     // broad, and from an ankle's height a leaf without it is a strip of green paper.
@@ -2001,7 +2014,14 @@ export function createGrass(options: GrassOptions): Grass {
     const flowerCol = vec3(0.95, 0.55, 0.3).mul(float(1).add(lumps.mul(0.9)));
     const drawn = vCol.mul(mix(vec3(surface), flowerCol, inTuft)).mul(mix(vec3(1), min(vec3(texel.x, texel.y, texel.z).div(vec3(vAgainst.x, vAgainst.y, vAgainst.z)), vec3(4)), vUv.w));
     mat.colorNode = vec4(drawn.mul(min(float(1), uBrightest.div(max(max(drawn.x, drawn.y), max(drawn.z, float(1e-4)))))), 1);
-    mat.maskNode = vAgainst.w.lessThan(0.5).or(texel.w.greaterThan(0.5)).and(onTheStem.add(inTuft).greaterThan(0.5));
+    const mask = vAgainst.w.lessThan(0.5).or(texel.w.greaterThan(0.5)).and(onTheStem.add(inTuft).greaterThan(0.5));
+    // (A far tuft's strip is never broadened for flowers, so all it could cut away is a cut-out leaf picture's
+    // outline: with none in use it goes without the mask. A mask that might drop a pixel keeps a tiled GPU from
+    // hiding what lies behind the tufts before it is shaded, and the tufts cover much of a picture.)
+    if (!o.fine && o.field) {
+      tuftMasks.push({ mat, mask });
+      mat.maskNode = anyCutout(current) ? mask : null;
+    } else mat.maskNode = mask;
     if (o.fine && o.field) {
       // (Where the picture has several samples to a pixel, a share of them is the leaf: a far leaf thins out and does not fatten.)
       mat.opacityNode = varying(out.cover, `vGrassCover${name}`);
@@ -2826,7 +2846,7 @@ export function createGrass(options: GrassOptions): Grass {
       const petalFacing = mix(up.add(axisX.mul(out.x).add(axisZ.mul(out.y)).mul(shape.z.mul(along))), up.add(fOut.mul(0.6)), florets);
       const facing = normalize(mix(petalFacing, up, max(isCentre, isStalk)));
       const col = bloomLit(mix(mix(petalCol, centreCol, isCentre), stalkCol, isStalk), site.xz, at, site.tall, facing, isStalk);
-      const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
+      const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide, fog: !options.world?.air });
       mat.positionNode = at;
       mat.colorNode = vec4(varying(col, "vBloomCol"), 1);
       const mesh = new THREE.Mesh(nearGeo, mat);
@@ -2869,7 +2889,7 @@ export function createGrass(options: GrassOptions): Grass {
       const grassCol = vec3(row(site.k, 4).x, row(site.k, 4).y, row(site.k, 4).z);
       const strength = clamp(own.div(drawn), float(0), float(1));
       const col = bloomLit(mix(grassCol, flowerCol, mix(float(0.18), float(1), strength.mul(strength)).mul(shows)), site.xz, at, site.tall, site.up);
-      const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
+      const mat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide, fog: !options.world?.air });
       mat.positionNode = at;
       mat.colorNode = vec4(varying(col, "vBloomDotCol"), 1);
       const round = uv().sub(0.5).mul(2);
@@ -2923,9 +2943,20 @@ export function createGrass(options: GrassOptions): Grass {
         }
       }
     },
+    mapChanged() {
+      canopyDirty = 2;
+    },
     setSpecies(list) {
       current = list;
       repack();
+      const cut = anyCutout(list);
+      for (const t of tuftMasks) {
+        const want = cut ? t.mask : null;
+        if (t.mat.maskNode !== want) {
+          t.mat.maskNode = want;
+          t.mat.needsUpdate = true;
+        }
+      }
     },
     setLeafTextures(pictures) {
       const names = Object.keys(pictures);
@@ -3041,7 +3072,11 @@ export function createGrass(options: GrassOptions): Grass {
       uDetail.value.set(look.fold, look.relief, look.leafPixels);
       uLight.value = look.depth;
       // (The canopy's picture, again every so often: a species may have grown, or the map been painted on.)
-      if (canopyTarget && canopyQuad && frame++ % 20 === 0) {
+      // (Drawn when the species or the map have changed, and every ten seconds or so besides, for a host whose map
+      // changes without saying. It was drawn every twentieth frame, which on a still hole is work for nothing.)
+      frame++;
+      if (canopyTarget && canopyQuad && (canopyDirty > 0 || frame % 600 === 0)) {
+        canopyDirty = Math.max(0, canopyDirty - 1);
         const before = renderer.getRenderTarget();
         renderer.setRenderTarget(canopyTarget);
         canopyQuad.render(renderer);
