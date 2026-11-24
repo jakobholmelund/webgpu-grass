@@ -276,7 +276,6 @@ export function packSpecies(
     table[row + 16].set(site[0], site[1], site[2], site[3]);
     table[row + 17].set(inPatches[0], inPatches[1], inPatches[2], inPatches[3]);
     table[row + 18].set(Math.min(0.3, Math.max(0, s.mosaic ?? 0)), Math.max(0.1, s.mosaicSize ?? 0.9), Math.min(1, Math.max(-1, s.patchEdge ?? 0)), Math.min(1, Math.max(0, s.scorch ?? 0)));
-    c.set(s.color);
     table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), Math.min(4, Math.max(0.25, s.clumpScale ?? 1)));
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
     table[row + 9].set(under?.mean[0] ?? 1, under?.mean[1] ?? 1, under?.mean[2] ?? 1, s.patchKind === "blotches" ? 1 : s.patchKind === "runners" ? 2 : 0);
@@ -404,7 +403,7 @@ export function checkSpecies(value: unknown): string | null {
         return `species ${i}: ${key} is missing or not a ${typeof want}`;
       }
     }
-    if (!(row.tip as string in TIP_CODE)) return `species ${i}: tip is not point, cut or square`;
+    if (!Object.hasOwn(TIP_CODE, row.tip as string)) return `species ${i}: tip is not point, cut or square`;
     if (!/^#[0-9a-f]{6}$/i.test(row.color as string)) return `species ${i}: color is not a hex colour`;
     if ("textureMode" in row && row.textureMode !== "detail" && row.textureMode !== "color") return `species ${i}: textureMode is not detail or color`;
     if ("blooms" in row) {

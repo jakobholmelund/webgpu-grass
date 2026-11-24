@@ -227,15 +227,19 @@ export function speciesMap(m: GrassMap, rows?: number): SpeciesMapSource {
  */
 const leaderOf = (textures: readonly THREE.Texture[], uv: Vec2, species: readonly number[], edgePerLead: number): { species: Float; edge: Float } => {
   const taken = textures.map((tex) => texture(tex, uv).level(float(0)));
-  const shares = species.map((_, k) => [taken[k >> 2].r, taken[k >> 2].g, taken[k >> 2].b, taken[k >> 2].a][k & 3]);
-  // The surface with most of the ground here, and how far ahead of the next it is.
+  const channel = (k: number) => [taken[k >> 2].r, taken[k >> 2].g, taken[k >> 2].b, taken[k >> 2].a][k & 3];
+  // (Two surfaces may be one species: a species' share is its surfaces' most. The line between two surfaces of one
+  // species is no edge, or every place along it is told it stands on one, and loses what grows only off edges.)
+  const kinds = [...new Set(species)];
+  const shares = kinds.map((sp) => species.map((s, k) => (s === sp ? k : -1)).filter((k) => k >= 0).map(channel).reduce((a, b) => max(a, b)));
+  // The species with most of the ground here, and how far ahead of the next it is.
   let most = shares[0];
   let next = float(-1e6) as typeof most;
-  let which = float(species[0]) as typeof most;
+  let which = float(kinds[0]) as typeof most;
   for (let k = 1; k < shares.length; k++) {
     const leads = step(most, shares[k]);
     next = mix(max(next, shares[k]), most, leads);
-    which = mix(which, float(species[k]), leads);
+    which = mix(which, float(kinds[k]), leads);
     most = max(most, shares[k]);
   }
   const inside = step(float(0), uv.x).mul(step(float(0), uv.y)).mul(step(uv.x, float(1))).mul(step(uv.y, float(1)));

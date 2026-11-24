@@ -630,7 +630,8 @@ export function createGrass(options: GrassOptions): Grass {
   /** Only the squares of leaves that reach no further than this (m) are drawn into it: the two nearest. */
   const SHADOW_NEAR_RANGE_M = 2;
   /** The widest square of leaves that is drawn into the shadow picture reaches this far (m, its `range`). */
-  const SHADOW_CAST_RANGE_M = Math.max(...layers.near.map((l) => l.range).filter((r) => r < SHADOW_NEAR_RANGE_M));
+  // (At least a hand: a host's layers with no near square that short would make it -Infinity, and the shader no number.)
+  const SHADOW_CAST_RANGE_M = Math.max(0.05, ...layers.near.map((l) => l.range).filter((r) => r < SHADOW_NEAR_RANGE_M));
   /** A point goes from lit to shadowed over this much depth (m) behind what shadows it. */
   const SHADOW_SOFT_M = 0.012;
   const shadowTargets = [0, 1].map(() => {
@@ -914,6 +915,13 @@ export function createGrass(options: GrassOptions): Grass {
   const uPhase = uniform(new THREE.Vector4());
   const uCamPos = uniform(new THREE.Vector3());
   const uCamFwd = uniform(new THREE.Vector2(0, 1));
+  /**
+   * The cosine of how far either side of the heading the fine leaves are kept (beyond 1.5 m): half the picture's
+   * width and some, and more as the eye looks down, when the ground at the picture's lower corners lies well
+   * to the side of where it is heading. (A fixed 53 degrees left the lower corners of a picture looking down,
+   * or of a wide one, without their fine leaves.)
+   */
+  const uFineCone = uniform(0.6);
   /** Which way the eye looks, up and down too (a camera looking down sees ground behind its heading). */
   const uCamLook = uniform(new THREE.Vector3(0, 0, 1));
   /**
@@ -1056,13 +1064,22 @@ export function createGrass(options: GrassOptions): Grass {
     // few strides wide (the neighbour's tongues), one a stride (its drifts), one a hand (its single
     // plants), each as far as the species here lets its edge stray. So the neighbour comes in among it, and
     // a mown species, which lets nothing stray, keeps its line on its own side.
-    const blend = row(int(min(map.sample(strayed).species, float(MAX_SPECIES - 1))), 11).y;
+    const own = map.sample(strayed);
+    // (Nothing strays from where nothing grows: a sand's or a path's place would otherwise read a species' row
+    // that is not its own, the last, and stray as that one does.)
+    const growsHere = step(own.species, float(MAX_SPECIES - 0.5));
+    const blend = row(int(min(own.species, float(MAX_SPECIES - 1))), 11).y.mul(growsHere);
     const tongues = noise(xz.div(9.7).add(0.61));
     const drifts = noise(xz.div(2.3).add(0.29));
     const plants = noise(xz.div(0.37).add(0.83));
     // (The noise keeps near its middle: each is stretched to reach about as far, in metres, as it says.)
     const off = vec2(tongues.r, tongues.a).sub(0.5).mul(4.2).add(vec2(drifts.g, drifts.r).sub(0.5).mul(2.4)).add(vec2(plants.b, plants.g).sub(0.5).mul(1.8));
-    return map.sample(strayed.add(off.mul(blend)));
+    const went = map.sample(strayed.add(off.mul(blend)));
+    // (A grass strays into its neighbour's grass, not into bare ground: asked a way off into a bunker, a path or
+    // water, it keeps its own place, or long grass beside a bunker had bare tongues a metre or two into it where
+    // the ground beside it still showed the grass's colour.)
+    const intoBare = growsHere.mul(step(float(MAX_SPECIES - 0.5), went.species));
+    return { species: mix(went.species, own.species, intoBare), edge: mix(went.edge, own.edge, intoBare) };
   };
 
   /** A stand's colour at a place: its species' colour, drifting a little over tens of metres and over a few. */
@@ -2034,7 +2051,7 @@ export function createGrass(options: GrassOptions): Grass {
       const dist2d = length(toCell);
       // (The fine leaves are computed only where the picture is: within some 53 degrees of the eye's heading.)
       const inView = fine
-        ? dist2d.lessThan(40).and(dist2d.lessThan(1.5).or(dot(toCell, uCamFwd).greaterThan(dist2d.mul(0.6))))
+        ? dist2d.lessThan(40).and(dist2d.lessThan(1.5).or(dot(toCell, uCamFwd).greaterThan(dist2d.mul(uFineCone))))
         : dist2d.lessThan(L.range + 1).and(dist2d.lessThan(3.5).or(dot(toCell, uCamFwd).greaterThan(dist2d.mul(-0.35))));
 
       If(inView, () => {
@@ -2963,6 +2980,14 @@ export function createGrass(options: GrassOptions): Grass {
       // (A perspective camera's projection has 1 / tan(half its field of view) at [5].)
       renderer.getDrawingBufferSize(bufferSize);
       uPixel.value = 2 / Math.max(1e-3, camera.projectionMatrix.elements[5]) / Math.max(1, bufferSize.y);
+      {
+        // (Half the picture's width as an angle, from the projection's [0], 1 / tan of it; then 12 degrees to
+        // spare, and as much again as the eye is pitched down past 15 degrees, half as much once more.)
+        const halfWide = Math.atan(1 / Math.max(1e-3, Math.abs(camera.projectionMatrix.elements[0])));
+        const down = Math.max(0, Math.asin(Math.min(1, Math.max(-1, -fwd.y))) - (15 * Math.PI) / 180);
+        // (Never narrower than the 53 degrees it was: only wider pictures and pictures looking down gain by it.)
+        uFineCone.value = Math.min(0.6, Math.cos(Math.min(Math.PI, halfWide + (12 * Math.PI) / 180 + down * 1.5)));
+      }
       // The wind's running totals: what it has done since the last frame, at the pace it blows now.
       const dt = lastTimeS === null ? 0 : Math.min(0.25, Math.max(0, timeS - lastTimeS));
       lastTimeS = timeS;
