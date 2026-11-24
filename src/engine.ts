@@ -1112,12 +1112,18 @@ export function createGrass(options: GrassOptions): Grass {
     // that is not its own, the last, and stray as that one does.)
     const growsHere = step(own.species, float(MAX_SPECIES - 0.5));
     const blend = row(int(min(own.species, float(MAX_SPECIES - 1))), 11).y.mul(growsHere);
-    const tongues = noise(xz.div(9.7).add(0.61));
-    const drifts = noise(xz.div(2.3).add(0.29));
-    const plants = noise(xz.div(0.37).add(0.83));
-    // (The noise keeps near its middle: each is stretched to reach about as far, in metres, as it says.)
-    const off = vec2(tongues.r, tongues.a).sub(0.5).mul(4.2).add(vec2(drifts.g, drifts.r).sub(0.5).mul(2.4)).add(vec2(plants.b, plants.g).sub(0.5).mul(1.8));
-    const went = map.sample(strayed.add(off.mul(blend)));
+    // (Asked a second time only for a species that lets its edge stray: for one that does not, the second
+    // place is the first. Most of what a map costs is in asking it: a mix's colonies, a host's own ground.)
+    const wentAt = onlyWhere(blend.greaterThan(0), () => {
+      const tongues = noise(xz.div(9.7).add(0.61));
+      const drifts = noise(xz.div(2.3).add(0.29));
+      const plants = noise(xz.div(0.37).add(0.83));
+      // (The noise keeps near its middle: each is stretched to reach about as far, in metres, as it says.)
+      const off = vec2(tongues.r, tongues.a).sub(0.5).mul(4.2).add(vec2(drifts.g, drifts.r).sub(0.5).mul(2.4)).add(vec2(plants.b, plants.g).sub(0.5).mul(1.8));
+      const there = map.sample(strayed.add(off.mul(blend)));
+      return vec2(there.species, there.edge);
+    }, vec2(own.species, own.edge));
+    const went = { species: wentAt.x, edge: wentAt.y };
     // (A grass strays into its neighbour's grass, not into bare ground: asked a way off into a bunker, a path or
     // water, it keeps its own place, or long grass beside a bunker had bare tongues a metre or two into it where
     // the ground beside it still showed the grass's colour.)

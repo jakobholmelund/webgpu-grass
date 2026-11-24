@@ -2,7 +2,7 @@
 // at a place in it (the arithmetic, and why, is mixshare.ts, the twin of what is worked out here).
 
 import * as THREE from "three/webgpu";
-import { cos, dot, exp, float, floor, length, max, mix, mod, normalize, sin, step, vec2 } from "three/tsl";
+import { Fn, If, cos, dot, exp, float, floor, length, max, mod, normalize, sin, step, vec2 } from "three/tsl";
 import { type MapSource, NO_GRASS } from "./field";
 import { type GrassMix, memberSalt, mixChances } from "./mixshare";
 import { hashCell } from "./placement";
@@ -14,25 +14,29 @@ type Float = THREE.Node<"float">;
 /** 1 where a place is in one of a member's colonies (`inColony` in mixshare.ts, its twin). */
 function inColony(xz: Vec2, size: number, kept: number, salt: number): Float {
   const home = floor(xz.div(size));
+  // (The edge's grain is the place's, whichever colony it is the edge of.)
+  const grain = hashCell(xz.mul(29.7)).mul(2).sub(1).mul(0.16);
   const inside = float(0).toVar();
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
       const cell = home.add(vec2(dx, dz));
       const hc = mod(cell, float(1024)).add(vec2(salt * 0.731, salt * 0.317));
-      const there = step(float(kept), hashCell(hc.add(2.9))).oneMinus();
-      const centre = cell.add(vec2(hashCell(hc.add(1.3)), hashCell(hc.add(7.9))).mul(0.7).add(0.15)).mul(size);
-      const reach = exp(hashCell(hc.add(4.1)).sub(0.5).mul(0.8)).mul(size * 0.5);
-      // (Its ragged edge: mixshare.ts `edgeAt`, its twin.)
-      const off = xz.sub(centre);
-      const n = normalize(off.add(vec2(1e-6, 0)));
-      const a = hashCell(hc.add(5.3)).mul(6.2832);
-      const b = hashCell(hc.add(6.7)).mul(6.2832);
-      const along = dot(n, vec2(cos(a), sin(a)));
-      const edge = float(1)
-        .add(along.mul(along).mul(2).sub(1).mul(0.2))
-        .add(dot(n, vec2(cos(b), sin(b))).mul(0.12))
-        .add(hashCell(xz.mul(29.7)).mul(2).sub(1).mul(0.16));
-      inside.assign(max(inside, step(length(off), reach.mul(edge)).mul(there)));
+      // (Most squares have no colony: for those none of the rest is worked out.)
+      If(hashCell(hc.add(2.9)).lessThan(kept), () => {
+        const centre = cell.add(vec2(hashCell(hc.add(1.3)), hashCell(hc.add(7.9))).mul(0.7).add(0.15)).mul(size);
+        const reach = exp(hashCell(hc.add(4.1)).sub(0.5).mul(0.8)).mul(size * 0.5);
+        // (Its ragged edge: mixshare.ts `edgeAt`, its twin.)
+        const off = xz.sub(centre);
+        const n = normalize(off.add(vec2(1e-6, 0)));
+        const a = hashCell(hc.add(5.3)).mul(6.2832);
+        const b = hashCell(hc.add(6.7)).mul(6.2832);
+        const along = dot(n, vec2(cos(a), sin(a)));
+        const edge = float(1)
+          .add(along.mul(along).mul(2).sub(1).mul(0.2))
+          .add(dot(n, vec2(cos(b), sin(b))).mul(0.12))
+          .add(grain);
+        inside.assign(max(inside, step(length(off), reach.mul(edge))));
+      });
     }
   }
   return inside;
@@ -64,17 +68,28 @@ export function mixedMap(source: MapSource, mixes: readonly GrassMix[]): MapSour
     edgeReach: source.edgeReach,
     sample(xz) {
       const here = source.sample(xz);
-      let species: Float = here.species;
-      for (const { mix: m, chances } of worked) {
-        const isLead = step(float(m.species - 0.5), here.species).mul(step(here.species, float(m.species + 0.5)));
-        // (Last member first, so the first one listed has a place two of them cover.)
-        let pick: Float = float(m.species);
-        for (let j = m.members.length - 1; j >= 0; j--) {
-          if (!(chances[j] > 0)) continue;
-          pick = mix(pick, float(m.members[j].species), inColony(xz, m.members[j].patchSize, chances[j], memberSalt(j)));
+      // (A place is in one stand at most: only that stand's mix is worked out there, and none where the
+      // stand is not a mix's.)
+      const species = Fn(() => {
+        const out = float(here.species).toVar();
+        for (const { mix: m, chances } of worked) {
+          If(here.species.greaterThan(m.species - 0.5).and(here.species.lessThan(m.species + 0.5)), () => {
+            // (The first member listed has a place two of them cover: once one has it, the rest are not asked.)
+            const taken = float(0).toVar();
+            for (let j = 0; j < m.members.length; j++) {
+              if (!(chances[j] > 0)) continue;
+              const member = m.members[j];
+              If(taken.lessThan(0.5), () => {
+                If(inColony(xz, member.patchSize, chances[j], memberSalt(j)).greaterThan(0.5), () => {
+                  out.assign(float(member.species));
+                  taken.assign(1);
+                });
+              });
+            }
+          });
         }
-        species = mix(species, pick, isLead);
-      }
+        return out;
+      })() as unknown as Float;
       return { species, edge: here.edge };
     },
     dispose() {
