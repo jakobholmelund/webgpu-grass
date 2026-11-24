@@ -517,3 +517,94 @@ export const MORE_PLANTS: { rush: Species } = {
     color: "#5a7a48", tipTint: [1.12, 1.02, 0.78], rootShade: 0.4, variation: 0.26, dry: 0.2, sheen: 1, edgeBlend: 0.6,
   }),
 };
+
+/**
+ * Grasses of other courses than the cool, wet parkland `TURF_SPECIES` are: a green gone over to annual
+ * meadow-grass, a warm coast's kikuyu, a links' fine fescue, and the dunes' marram.
+ *
+ * Annual meadow-grass (Poa annua) takes over most old greens on wet or mild coasts (California's
+ * public courses, Pebble Beach, much of the Pacific north-west): a lighter, yellower green than bent
+ * (34 ug of chlorophyll against the bent's 38: the bent green's patch tint), a broader leaf (2 to 3 mm
+ * grown, 1 to 1.5 at a green's cut), and it seeds even at a green's height, which a putt feels as
+ * bumpiness: a scatter of small pale seed heads. Bent that is left in it is the darker patches.
+ *
+ * Kikuyu (Pennisetum clandestinum, in the floras an African grass grown and gone wild on the coasts of
+ * California, Australia and South Africa) runs on thick stems over and under the ground into a dense,
+ * springy mat, the ball sitting up on it in a fairway and down in it in the rough: leaves 3 to 5 mm,
+ * folded, stiff, a bright pale green (taken as bermuda's 45 ug: it is a warm-season grass like bermuda),
+ * torn more than cut by a mower. Its own flowers are white threads among the leaves after a mowing,
+ * which are not drawn.
+ *
+ * Fine fescue (Chewings and slender creeping red fescue) is a links' fairway and green: leaves rolled to a
+ * needle, half a millimetre, the densest of the turf grasses, grey-green with red fescue's wax, browning
+ * in a dry summer where a links is not watered, and firm, which is why a links runs. Greens of it are cut
+ * higher than bent (4 to 5 mm); a fairway at about 10 mm.
+ *
+ * Marram (Ammophila arenaria) holds the dunes behind a links: leaves rolled into stiff, sharp, grey-green
+ * tubes 50 cm to over a metre, fanning from tussocks with bare sand between, many dead and pale, and in
+ * summer a dense pale spike of a seed head 7 to 22 cm long (the floras). Its colour is red fescue's
+ * with more wax (an estimate). Its rolled leaf is drawn as part way to a stem (`stem`). The spikes are
+ * not drawn: a species' seed head is on every leaf or on none, and marram's are on a few stalks.
+ *
+ * As with the others, the habit was set by eye.
+ */
+export const MORE_GRASSES: { poaGreen: Species; kikuyuFairway: Species; kikuyuRough: Species; fescueGreen: Species; fescueFairway: Species; marram: Species } = {
+  poaGreen: turf("Green (annual meadow-grass)", 0, { cutTip: 0.16,
+    height: 0.0032, heightSpread: 0.14, density: 1.7, width: 0.0013, widthSpread: 0.0004, tip: "cut", seedHead: 0.12,
+    splay: 0.35, droop: 0.25, stiffness: 1, disorder: 0.35, color: "#789b4a", tipTint: [1.04, 1.05, 0.96], seedTint: [1.35, 1.32, 1.12], rootShade: 0.78, variation: 0.17,
+    dry: 0.008, sheen: 0, lay: 1, groundTile: 0.35,
+    // (The bent that is left in it: darker, finer, a little lower.)
+    patchSite: 0, patch: 0.14, patchSize: 0.45, patchTint: [0.89, 0.91, 1.02], patchTall: 0.95,
+  }),
+  kikuyuFairway: turf("Fairway (kikuyu)", 1, { cutTip: 0.4,
+    height: 0.013, heightSpread: 0.1, density: 1.7, width: 0.0033, widthSpread: 0.0009, tip: "cut",
+    splay: 0.45, droop: 0.15, twist: 0.35, stiffness: 1, clump: 0, disorder: 0.35, color: "#698a4c", tipTint: [1.06, 1.06, 0.95], rootShade: 0.6,
+    variation: 0.2, dry: 0.015, sheen: 0.6, lay: 0.55, groundTile: 0.5,
+  }),
+  kikuyuRough: turf("Rough (kikuyu)", 2, { cutTip: 0.55,
+    height: 0.05, heightSpread: 0.22, density: 1.6, width: 0.0038, widthSpread: 0.001, tip: "cut",
+    splay: 0.9, droop: 0.45, twist: 0.6, stiffness: 0.95, clump: 0.25, disorder: 0.5, color: "#678849", tipTint: [1.07, 1.07, 0.94], rootShade: 0.36,
+    variation: 0.24, dry: 0.025, sheen: 0.8, lay: 0,
+    blooms: [{ flower: "dandelion", perM2: 6, cover: 0.08, site: 0, where: "drifts" }],
+  }),
+  fescueGreen: turf("Green (fine fescue)", 0, { cutTip: 0.14,
+    height: 0.0045, heightSpread: 0.1, density: 2.3, width: 0.0006, widthSpread: 0.0002, tip: "cut",
+    splay: 0.3, droop: 0.25, stiffness: 1, disorder: 0.3, color: "#789b64", tipTint: [1.06, 1.05, 0.94], rootShade: 0.78, variation: 0.16,
+    dry: 0.03, sheen: 0.2, lay: 0.85, groundTile: 0.35,
+    // (Browner where it dries first, on the crowns.)
+    patchKind: "blotches", patchSite: 0.8, patch: 0.14, patchSize: 0.8, patchTint: [1.1, 1.0, 0.84], patchTall: 1,
+  }),
+  fescueFairway: turf("Fairway (fine fescue)", 1, { cutTip: 0.4,
+    height: 0.01, heightSpread: 0.14, density: 2.2, width: 0.0006, widthSpread: 0.0002, tip: "cut",
+    splay: 0.6, droop: 0.5, twist: 0.5, stiffness: 1, disorder: 0.45, color: "#789b64", tipTint: [1.1, 1.07, 0.9], rootShade: 0.66,
+    variation: 0.24, dry: 0.07, sheen: 0.3, lay: 0.4, groundTile: 0.5,
+    patchKind: "blotches", patchSite: 0.8, patch: 0.22, patchSize: 1.6, patchTint: [1.16, 1.02, 0.8], patchTall: 1,
+  }),
+  marram: turf("Marram", 5, {
+    height: 0.8, heightSpread: 0.5, density: 1, tufted: true, width: 0.003, widthSpread: 0.001, tip: "point",
+    splay: 0.55, droop: 0.3, twist: 0.3, seedHead: 0, stiffness: 0.7, clump: 1, disorder: 0.6, tussock: 0.85, stem: 0.6, flower: 0,
+    color: "#7f9a6e", tipTint: [1.15, 1.1, 0.86], seedTint: [1.6, 1.45, 1.05], rootShade: 0.5, variation: 0.2, dry: 0.28, sheen: 0.5, edgeBlend: 0.8,
+  }),
+};
+
+/**
+ * Every species here by a name: a host makes its own list from them (`cloneSpecies` the ones it wants, in
+ * the order of its map's numbers), as a course has the grasses it has.
+ */
+export const GRASSES = {
+  bentGreen: TURF_SPECIES[0],
+  bentCollar: TURF_SPECIES[1],
+  ryeFairway: TURF_SPECIES[2],
+  ryeFirstCut: TURF_SPECIES[3],
+  rough: TURF_SPECIES[4],
+  redFescueRough: TURF_SPECIES[5],
+  fescueInSeed: TURF_SPECIES[6],
+  hayMeadow: TURF_SPECIES[7],
+  bermudaFairway: MORE_TURF.bermuda,
+  bluegrassLawn: MORE_TURF.bluegrass,
+  ...MORE_GRASSES,
+  softRush: MORE_PLANTS.rush,
+} satisfies Record<string, Species>;
+
+/** A species' name in `GRASSES`. */
+export type GrassName = keyof typeof GRASSES;

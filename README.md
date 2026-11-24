@@ -109,6 +109,27 @@ championship set-up sheets (GCSAA, Oakmont, the Open venues). Each mown band
 is a separate mower at a fixed height, so its edges are steps
 (`edgeBlend` 0); rough into native grass is not kept, and is not sharp.
 
+## Other courses' grasses
+
+`GRASSES` holds every species here by a name, and a host makes its own list
+from it, as a course has the grasses it has: `TURF_SPECIES` (a cool, wet
+parkland's: bent greens, rye fairways), `MORE_TURF` (a bermuda fairway, a
+bluegrass lawn), `MORE_PLANTS` (soft rush) and `MORE_GRASSES`:
+
+| Name | What | Height |
+| --- | --- | --- |
+| `poaGreen` | A green gone over to annual meadow-grass: lighter, broader-leaved, seeding at a green's height, the bent left in it in darker patches | 3.2 mm |
+| `kikuyuFairway`, `kikuyuRough` | Kikuyu, a warm coast's: a dense springy mat of broad stiff folded leaves | 13 mm, 50 mm |
+| `fescueGreen`, `fescueFairway` | A links': fine fescue, needle-leaved, the densest turf, grey-green and browning on the crowns where it is not watered | 4.5 mm, 10 mm |
+| `marram` | The dunes behind a links: rolled grey-green leaves in tussocks, many dead | 80 cm |
+
+The lab's *A links*, *Marram on the dunes* and *Kikuyu on a warm coast*
+show them. Their habit was set by eye, as the others' was. Not drawn:
+kikuyu's white flowers among the leaves after a mowing, and marram's pale
+seed spikes (a species' seed head is on every leaf or none). Marram's
+tussocks stand as far apart as every species' clumps (`look.clumpSize`),
+which is closer than on most dunes, so its leaves close over the sand.
+
 ## Where its light and wind come from
 
 - **Light lost in the stand.** Roots are as dark as exp(-K L) makes them

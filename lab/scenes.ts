@@ -5,7 +5,7 @@
 //
 // The first eight are a golf course's surfaces, short to tall, one to a scene.
 
-import { MORE_PLANTS, MORE_TURF, type Species, TURF_SPECIES, cloneSpecies } from "../src/index";
+import { GRASSES, MORE_PLANTS, MORE_TURF, type Species, TURF_SPECIES, cloneSpecies } from "../src/index";
 import { type PlotLayout } from "./world";
 
 export interface Scene {
@@ -202,6 +202,43 @@ export const SCENES: Scene[] = [
     plot: ROUGH, row: ROUGH,
     view: { x: 14, z: -6, eye: 0.32, yaw: -0.9, pitch: -0.36, fov: 42 },
     sun: [150, 42], wind: [90, 3],
+  },
+  {
+    id: "a-links",
+    title: "A links",
+    blurb: "Fine fescue mown for a fairway and a green, needle-leaved, grey-green and browning on the crowns where a links is not watered; red fescue rough, fescue in seed beyond it, and marram on the dunes on the other side.",
+    species: cloneSpecies([GRASSES.fescueGreen, GRASSES.fescueFairway, GRASSES.redFescueRough, GRASSES.fescueInSeed, GRASSES.marram]),
+    plot: -1, row: 1,
+    layout: { bands: [5, 13, 21], beyond: [3, 4] },
+    view: { x: -9, z: 2, eye: 0.9, yaw: TO_FESCUE - 0.25, pitch: -0.14, fov: 52 },
+    sun: [200, 30], wind: [250, 7],
+    mow: [2.5, 12],
+  },
+  {
+    id: "marram",
+    title: "Marram on the dunes",
+    blurb: "A dune's grass: leaves rolled into stiff grey-green tubes, fanning from tussocks with open ground between, many dead and pale. (Its pale spikes of seed are not drawn.)",
+    species: cloneSpecies([GRASSES.fescueGreen, GRASSES.fescueFairway, GRASSES.redFescueRough, GRASSES.fescueInSeed, GRASSES.marram]),
+    plot: 4, row: 4,
+    layout: { bands: [5, 13, 21], beyond: [3, 4] },
+    view: { x: 25, z: 4, eye: 1.5, yaw: 0.4, pitch: -0.3, fov: 52 },
+    sun: [210, 26], wind: [250, 8],
+  },
+  {
+    id: "kikuyu-coast",
+    title: "Kikuyu on a warm coast",
+    blurb: "A green gone over to annual meadow-grass, kikuyu's broad stiff leaves in a dense mat for fairway and rough, and the long grass beyond dried out in a rainless summer.",
+    species: (() => {
+      const list = cloneSpecies([GRASSES.poaGreen, GRASSES.kikuyuFairway, GRASSES.kikuyuRough, GRASSES.fescueInSeed]);
+      // (Unwatered grass in a dry summer is mostly dead leaves: straw, not green.)
+      Object.assign(list[3], { dry: 0.7, color: "#a69a63", blooms: [] });
+      return list;
+    })(),
+    plot: -1, row: 1,
+    layout: { bands: [5, 13, 22], beyond: [3, 3] },
+    view: { x: -10.5, z: 3, eye: 0.45, yaw: TO_FESCUE - 0.15, pitch: -0.12, fov: 48 },
+    sun: [190, 58], wind: [270, 5],
+    mow: [2.5, 12],
   },
   {
     id: "storybook",
