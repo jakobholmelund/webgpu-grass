@@ -294,7 +294,8 @@ A species can have up to four flowers in it (`blooms`). Each names a
 flower (`"daisy"`, `"buttercup"`, `"dandelion"`, `"clover"`,
 `"speedwell"`, `"selfheal"`, `"kikuyu"`, `"oxeye"`, `"redClover"`,
 `"catsear"`, `"knapweed"`, `"yarrow"`, `"harebell"`, `"birdsfoot"`,
-`"plantain"`, or one of the host's own, given as `flowers` when the grass
+`"plantain"`, the coast's `"thrift"`, `"seaAster"` and `"seaPlantain"`,
+or one of the host's own, given as `flowers` when the grass
 is made) and says how many to the square metre in the heart of one of its
 colonies (`perM2`), the share of the stand's ground its colonies take
 (`cover`), and where on the ground they take (`site`: creeping buttercup in

@@ -93,7 +93,7 @@ export const FLOWER_SLOTS = 5;
 export const FORM_CODE: Record<FlowerForm, number> = { disc: 0, spike: 1, umbel: 2, bell: 3 };
 
 /**
- * Sixteen that grow in grass. Sizes from the floras (Stace; Clapham, Tutin and Moore).
+ * Nineteen that grow in grass. Sizes from the floras (Stace; Clapham, Tutin and Moore).
  *
  * In mown grass: a daisy's head 16 to 25 mm across on a stalk 3 to 12 cm; a creeping buttercup's flower
  * 2 to 3 cm, five glossy petals; a dandelion's head 25 to 40 mm of strap-shaped florets; white clover's a
@@ -111,6 +111,13 @@ export const FORM_CODE: Record<FlowerForm, number> = { disc: 0, spike: 1, umbel:
  * ribwort plantain, a dark brown spike 1 to 4 cm ringed with pale stamens, on 10 to 40 cm. And a grass's
  * own: marram's, a dense pale spike 7 to 22 cm long and 1.5 to 2 cm thick, over its leaves.
  *
+ * On a coastal meadow the sea reaches in winter, among red fescue and saltmarsh rush: thrift, a round
+ * pink head of small flowers 1.5 to 3 cm across on a bare stalk to 20 or 30 cm, from a cushion (Flora of
+ * Victoria; up to 40 cm); sea aster, a head 1 to 4 cm across (commonly 2) of pale violet rays round a
+ * yellow disc, on 15 to 60 cm, from July to September (iFlora; Flora Europaea's subsp. tripolium of the
+ * North Sea and the Baltic); sea plantain, a lax spike 3 to 7 cm long and 3 to 4 mm thick of greenish
+ * flowers with pale yellow stamens, on a stout stalk 5 to 20 cm (Flora Europaea; Gleason and Cronquist).
+ *
  * Where they grow (`colony`, `light`). How far a plant creeps each year from Pladias (Kaplan et al. 2019,
  * clonal traits from CLO-PLA; pladias.cz): white clover 27 cm, yarrow 14, speedwell 13, harebell 11,
  * daisy 10, cat's-ear and meadow buttercup 2, knapweed 1; bird's-foot trefoil, red clover and the
@@ -120,7 +127,9 @@ export const FORM_CODE: Record<FlowerForm, number> = { disc: 0, spike: 1, umbel:
  * to 2.5 m for a creeper, and marram (its rhizomes run 2 m in half a year) and kikuyu 3 m. The least light
  * from their Ellenberg values (Pladias): 8 for cat's-ear, daisy and knapweed, rarely in less than 0.4 of
  * the open's light; 7 for most, 0.3; 6 for germander speedwell, 0.2 (slender speedwell taken as it).
- * Marram's, kikuyu's, selfheal's and plantain's were not looked up: 0.4, 0.4, 0.3, 0.3.
+ * Marram's, kikuyu's, selfheal's and plantain's were not looked up: 0.4, 0.4, 0.3, 0.3; nor the coast's
+ * three, which grow in the open and are given 0.4. None of the three creeps far: thrift a cushion, sea aster
+ * by seed and a short rootstock, sea plantain a rosette: 1.2 to 1.4 m.
  *
  * Colours by eye. Each form is as near as so few surfaces come: a trefoil's pea flower is drawn as a
  * cupped petal, a spike's florets as petals round a core, and a stalk has no branches or leaves.
@@ -142,6 +151,9 @@ export const FLOWERS: Record<string, Flower> = {
   birdsfoot: { name: "Bird's-foot trefoil", form: "umbel", petals: 5, petalLength: 0.011, petalWidth: 0.007, lift: 0.55, centre: 0.002, length: 0.004, stem: 0.12, petalColor: "#f0c21a", centreColor: "#e0960f", colony: 1.2, light: 0.3 },
   marram: { name: "Marram's spike", form: "spike", petals: 16, petalLength: 0.007, petalWidth: 0.004, lift: 0.85, centre: 0.014, length: 0.15, stem: 1, petalColor: "#d6cda2", centreColor: "#c9bf93", colony: 3.0, light: 0.4 },
   plantain: { name: "Ribwort plantain", form: "spike", petals: 16, petalLength: 0.005, petalWidth: 0.0016, lift: 0.1, centre: 0.007, length: 0.025, stem: 0.3, petalColor: "#efe9d2", centreColor: "#4a3a28", colony: 1.2, light: 0.3 },
+  thrift: { name: "Thrift", petals: 16, petalLength: 0.009, petalWidth: 0.0042, lift: 0.9, centre: 0.008, stem: 0.22, petalColor: "#e49cbc", centreColor: "#c77898", colony: 1.2, light: 0.4 },
+  seaAster: { name: "Sea aster", petals: 16, petalLength: 0.0075, petalWidth: 0.0022, lift: 0.08, centre: 0.007, stem: 0.35, petalColor: "#ab9ed8", centreColor: "#e0b21c", colony: 1.4, light: 0.4 },
+  seaPlantain: { name: "Sea plantain", form: "spike", petals: 16, petalLength: 0.0035, petalWidth: 0.0013, lift: 0.15, centre: 0.0045, length: 0.05, stem: 0.15, petalColor: "#e6dca2", centreColor: "#5d5a38", colony: 1.2, light: 0.4 },
 };
 
 /** One uniform-array entry to a slot, a row to a flower: made once, then written into by `packFlowers`. */
