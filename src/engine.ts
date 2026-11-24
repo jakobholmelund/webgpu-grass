@@ -429,6 +429,13 @@ export interface GrassOptions {
   noise?: THREE.Texture;
 }
 
+/** What the grass already knows of a place when it asks the host for its light there: the ground's height and normal, and the species growing there (its row, or `NO_GRASS`). */
+export interface PlaceKnown {
+  height: THREE.Node<"float">;
+  normal: Vec3;
+  species: THREE.Node<"float">;
+}
+
 /** See `GrassOptions.world`. Any of them may be left out. */
 export interface WorldLight {
   /** How much of the sun reaches the place, 0..1: a cloud's shadow, a tree's. The sky still lights it. */
@@ -441,14 +448,18 @@ export interface WorldLight {
    * The flowers of open grassland take little of it (`Flower.colony`). Not given: open everywhere.
    */
   shelter?(xz: Vec2): THREE.Node<"float">;
-  /** What the grass's colour is multiplied by there: wet grass is darker, grass under leaves is lit green. */
-  tint?(xz: Vec2): Vec3;
+  /**
+   * What the grass's colour is multiplied by there: wet grass is darker, grass under leaves is lit green.
+   * `at`, when given, is what the grass already knows of the place (`PlaceKnown`), for a host that would
+   * otherwise look it up again.
+   */
+  tint?(xz: Vec2, at?: PlaceKnown): Vec3;
   /**
    * What the colour of something in the grass that is not grass (a flower) is multiplied by there: the
    * light's part of `tint` (the shade, the wet), without what a host puts in `tint` to make the grass the
    * colour of its ground. Not given, flowers take `tint`.
    */
-  light?(xz: Vec2): Vec3;
+  light?(xz: Vec2, at?: PlaceKnown): Vec3;
   /**
    * The air between a leaf and the eye: given the leaf's colour and where it is, the colour that reaches
    * the eye. A host with haze of its own (the scene's fog is applied without this). Called for each
@@ -1097,13 +1108,13 @@ export function createGrass(options: GrassOptions): Grass {
   };
 
   /** A stand's colour at a place: its species' colour, drifting a little over tens of metres and over a few. */
-  const tone = (xz: Vec2, base: Vec3) => {
+  const tone = (xz: Vec2, base: Vec3, at?: PlaceKnown) => {
     const ga = noise(xz.div(208.0));
     const gb = noise(xz.div(36.0).add(0.37));
     const broad = ga.r.mul(0.6).add(ga.g.mul(0.4));
     const mid = gb.r.mul(0.65).add(gb.a.mul(0.35));
     const drifted = base.mul(float(1).add(broad.sub(0.5).mul(uLook.y))).mul(float(1).add(mid.sub(0.5).mul(0.14)));
-    return options.world?.tint ? drifted.mul(options.world.tint(xz)) : drifted;
+    return options.world?.tint ? drifted.mul(options.world.tint(xz, at)) : drifted;
   };
 
   /** Lit as the ground is lit, slope and all: a bank facing the sun is lighter, and its grass with it. */
@@ -1218,6 +1229,25 @@ export function createGrass(options: GrassOptions): Grass {
       lit = min(lit, float(1).sub(smoothstep(float(0), float(0.015 + far * 0.1), over)));
     }
     return mix(float(1), lit, uShade.x).mul(world && options.world?.sun ? clamp(options.world.sun(xz), float(0), float(1)) : float(1));
+  };
+  /**
+   * `sunReach` for two heights at one place at once, as (the lower, the higher): the same steps towards the sun
+   * read once for both, and the host's sun asked once. (Each plant asks it for its root and its tip.)
+   */
+  const sunReachPair = (xz: Vec2, low: THREE.Node<"float">, high: THREE.Node<"float">): Vec2 => {
+    const flat = vec2(uSun.x, uSun.z);
+    const across = max(length(flat), float(0.05));
+    const to = flat.div(across);
+    const rise = uSun.y.div(across);
+    let litLow = float(1) as THREE.Node<"float">;
+    let litHigh = float(1) as THREE.Node<"float">;
+    for (const far of [0.05, 0.12, 0.28, 0.6, 1.2]) {
+      const there = canopyAt(xz.add(to.mul(far))).sub(rise.mul(far)).toVar();
+      litLow = min(litLow, float(1).sub(smoothstep(float(0), float(0.015 + far * 0.1), there.sub(low))));
+      litHigh = min(litHigh, float(1).sub(smoothstep(float(0), float(0.015 + far * 0.1), there.sub(high))));
+    }
+    const sun = options.world?.sun ? clamp(options.world.sun(xz), float(0), float(1)) : float(1);
+    return vec2(mix(float(1), litLow, uShade.x), mix(float(1), litHigh, uShade.x)).mul(sun);
   };
   /** How much of the sky a point sees, 0..1: less beside taller grass, whichever way the sun is. */
   const skyOpen = (xz: Vec2, up: THREE.Node<"float">, world = true): THREE.Node<"float"> => {
@@ -2222,11 +2252,12 @@ export function createGrass(options: GrassOptions): Grass {
           .add(vec2(pressed.x, pressed.y));
 
         // (What of the sky it sees is worked out half way up it, and is in its colour; the sun at its root and at its tip go with it, for the leaf to shade between.)
-        const colLit = tone(xz, base).mul(mix(float(1), float(TRAIL_WIPED_TINT), pressed.w)).mul(siteTint(xz)).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(strainTint(xz, k)).mul(scorchTint(xz, k, here.edge)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
+        const colLit = tone(xz, base, { height: ground.height, normal: ground.normal, species: here.species }).mul(mix(float(1), float(TRAIL_WIPED_TINT), pressed.w)).mul(siteTint(xz)).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(strainTint(xz, k)).mul(scorchTint(xz, k, here.edge)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
         // (A fine leaf is broadened for the leaves the view thinned out about it, not for those its species never grows.)
         const broaden = clamp(float(1).div(pow(max(viewShare, float(0.1)), float(0.5))).sub(1), float(0), float(BROADEN_MAX));
         outState.assign(vec4(lean.x, lean.y, tall, gust.sub(0.5).mul(min(windTakes, float(1)))));
-        outShape.assign(vec4(float(k), fine ? broaden : reach, sunReach(xz, float(0)), sunReach(xz, tall0)));
+        const reaches = sunReachPair(xz, float(0), tall0);
+        outShape.assign(vec4(float(k), fine ? broaden : reach, reaches.x, reaches.y));
         outCol.assign(vec4(colLit.x, colLit.y, colLit.z, gy));
       });
 
