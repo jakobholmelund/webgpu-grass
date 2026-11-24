@@ -11,11 +11,13 @@ WebGPU only (three.js r187, `three/webgpu`).
 ```
 src/   the package: imports three and nothing else
 lab/   the lab: a plot of ground and a panel to edit the grass on it
+test/  the tests
 ```
 
 `pnpm test` holds the two walls: the package imports only three, and the lab
 reaches the package only through `src/index.ts`, so the lab can do only what
-your project could.
+your project could. It also checks the placement's twin in plain numbers
+against the plants' ranks and hashes (`test/placement.test.mjs`).
 
 ## The lab
 
@@ -161,8 +163,7 @@ here: it was set by eye.
   than across (roughness 0.18 and 0.46, from wheat leaves: Comar et al.).
   **Light through it** follows Barre-Brisebois and Bouchard (GDC 2011).
 - **Wind.** A two-scale gust field scrolled downwind, as Sucker Punch
-  describe for Ghost of Tsushima (GDC 2021), which also pales the far
-  ground; over it every leaf swings in a small figure of eight, which
+  describe for Ghost of Tsushima (GDC 2021); over it every leaf swings in a small figure of eight, which
   Guerrilla found is most of what reads as wind (Sanders, GDC 2018).
 - **Patches.** A species can have part of its ground in patches of another
   colour and height (`patch`, `patchSize`, `patchTint`, `patchTall`):
@@ -364,6 +365,9 @@ out.
 - `world.sky(xz)`: how much of the sky it sees, 0 to 1. Under a crown, in
   a hollow.
 - `world.tint(xz)`: what the grass's colour is multiplied by. Wet grass.
+- `world.light(xz)`: what a flower's colour is multiplied by: the light's
+  part of `tint` (shade, the wet), without what makes a leaf the colour of
+  its ground. Not given, flowers take `tint`.
 - `world.shelter(xz)`: how much of the day's light the place goes without,
   0 open to 1 under a closed crown, for what grows there: a flower flowers
   less the less light it has (by 0.72 for each tenth lost, as meadow herbs
@@ -372,7 +376,7 @@ out.
 - `world.air(colour, at)`: the air between a leaf and the eye, for a host
   with haze of its own: the colour that reaches the eye.
 
-The shaders call them in the compute pass and in fragment shaders both, so
+The shaders call them in compute passes, vertex shaders and fragment shaders, so
 a texture in one is looked up at a set level. The lab's "clouds' shadows"
 is one: twenty lines in `lab/main.ts`.
 
@@ -436,7 +440,7 @@ the fields made for you.
   own, it repeats every `groundTile`, and at 1,024 pixels to the tile it
   is a blur from a few centimetres off.
 - **A leaf's cross-section.** A leaf bends in an arc and keeps its length.
-  The leaves nearest the eye (the two near squares, and a specimen) are
+  The leaves nearest the eye (the three near squares, and a specimen) are
   folded along the rib in their geometry, each half facing its own way
   (`look.fold`); further off a leaf is a flat strip, where it is too
   small in the picture for the fold to show.
@@ -471,6 +475,12 @@ the fields made for you.
 - **Leaf pictures at a distance.** They have no smaller copies: their detail
   fades out by nine metres, and a cut-out's outline flickers far off. There
   are no normal maps, and the pictures share sixteen layers of 64 by 256.
+- **A map that changes.** The grass keeps a picture of how tall it stands
+  over the map's ground, for its shadows and the lie of the ground. It is
+  drawn again when the species change, and when the host says the map has
+  (`grass.mapChanged()`); otherwise only every 600 frames. Its texels are
+  about a metre over a golf hole's ground, coarser than the shadows' first
+  steps.
 - **Shadows from anything but grass.** The grass keeps a picture of how
   tall it stands over the map's ground (if the map says what ground it
   covers), and leaves and ground look a little way towards the sun in it:
@@ -490,8 +500,8 @@ the fields made for you.
   arguments), which took a fifth to a third off the heavier views; what
   is left is mostly the drawing of leaves that are seen. No phone and no
   other card has been measured.
-- **The near squares' leaves.** Close to the ground two finer squares of
-  leaves switch on (5 mm and 1 cm apart, a mown sward's own density) and
+- **The near squares' leaves.** Close to the ground three finer squares of
+  leaves switch on (2, 5 and 10 mm apart, a mown sward's own density) and
   off again as the eye rises. A species' density above 1 (more leaves to
   a plant) shows only in them.
 - **Any eye.** The squares of fine leaves were tuned for an eye a metre and

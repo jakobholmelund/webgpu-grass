@@ -17,7 +17,7 @@ type Vec3 = THREE.Node<"vec3">;
 /** A map's number for ground where nothing grows. */
 export const NO_GRASS = 255;
 
-/** The ground's height (m) and its normal at a place. Sampled in the compute pass. */
+/** The ground's height (m) and its normal at a place. Sampled in the compute passes, in vertex shaders and in the canopy's fragment shader. */
 export interface HeightSource {
   sample(xz: Vec2): { height: Float; normal: Vec3 };
   dispose(): void;

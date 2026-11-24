@@ -132,8 +132,9 @@ export interface GrassLayer {
   range: number;
 }
 
-/** A finer square of fine leaves still, drawn only while the eye is within `within` metres of where it is centred (in a 50 degree view 1,200 pixels tall; further in a closer or larger one). */
+/** A finer square of fine leaves still, drawn only while the eye is close enough over the ground that its leaves can be seen (by its reach). */
 export interface NearLayer extends GrassLayer {
+  /** Not read: the square is drawn by its reach, as the others are. Kept so a host that gives it still compiles. */
   within: number;
   /** Only stands shorter than this (m) grow in it: a square fine enough for a green's shoots is far more leaves than rough has. */
   below?: number;
@@ -151,9 +152,11 @@ export interface GrassLayers {
   wide?: GrassLayer;
   /** Finer squares for an eye close to the ground, finest first. */
   near: NearLayer[];
-  /** How far ahead of the eye each square is centred (m). */
+  /** How far ahead of the eye the far tufts' square is centred (m). */
   farAhead: number;
+  /** Not read: the fine squares are centred by their own reach. Kept so a host that gives them still compiles. */
   peakAhead: number;
+  /** Not read, as `peakAhead`. */
   midAhead: number;
 }
 
@@ -311,8 +314,6 @@ const THING_LANE = 1.2;
 const THING_LANE_TALL = 2.2;
 /** Mown turf no taller than this (m) is one even sward; by twice this it is plants again. */
 const SWARD_BELOW_M = 0.03;
-/** Plants along the side of a square of leaves. */
-const LAYER_SIDE = 332;
 /** The leaves' swing runs downwind in waves this long (m). */
 const SWING_WAVE_M = 1.8;
 /** How far (radians of its swing, either way) a leaf is out of step with those about it. */
@@ -567,11 +568,12 @@ export interface Grass {
    * (With `lookAt.focus`, the leaves are thickest about that place and not about the eye: a picture
    * of something on the ground some way off, a ball at a golfer's feet seen from behind, has its grass
    * where the thing is. They thin out from there as they otherwise do from the eye.)
-   * Once a frame, before rendering. `lookAt` is where the picture's middle
-   * meets the ground, if the host knows it: the fine leaves are centred
-   * there. Without it they are centred a few metres ahead of the eye. With
-   * the ground's height there too (`y`), the finest squares know how far
-   * off they are, and are drawn only when close.
+   * Once a frame, before rendering. The fine leaves are centred a few
+   * metres ahead of the eye, by each square's reach. `lookAt.y` is the
+   * ground's height where the picture looks, if the host knows it: the
+   * finest squares are drawn only while the eye is close enough over it.
+   * `lookAt.x` and `z` are used only with `focus` (above), when they are
+   * where the leaves are centred.
    */
   update(renderer: THREE.WebGPURenderer, camera: THREE.Camera, timeS: number, lookAt?: { x: number; y?: number; z: number; focus?: boolean }): void;
   /** Which of it is drawn: the far tufts, the fine leaves. */
@@ -1653,6 +1655,8 @@ export function createGrass(options: GrassOptions): Grass {
     field: boolean;
     /** The layer's range (m), for a field. */
     range: number;
+    /** The layer's plants' spacing (m), for a field: how far a plant's sward shoots stray from its root. */
+    spacing?: number;
     /** Each plant turned its own way, where there is no eye to turn towards: a picture taken from straight above. */
     spin?: boolean;
     /** Its geometry has a rib to fold along (`bladeGeometry`): the squares nearest the eye, and a specimen. */
@@ -1724,7 +1728,7 @@ export function createGrass(options: GrassOptions): Grass {
     // way as another. So a mown plant's leaves stand spread over the whole of the plant's own cell, each
     // its own shoot, and not in a bunch at the cell's middle with bare ground showing round it.)
     const sward = isCut.mul(float(1).sub(smoothstep(float(SWARD_BELOW_M), float(SWARD_BELOW_M * 2), stand.x)));
-    const swardOut = vec2(hashCell(hcell.add(b.mul(4.1).add(71.0))), hashCell(hcell.add(b.mul(6.7).add(83.0)))).sub(0.5).mul((o.range * 2) / LAYER_SIDE).mul(sward);
+    const swardOut = vec2(hashCell(hcell.add(b.mul(4.1).add(71.0))), hashCell(hcell.add(b.mul(6.7).add(83.0)))).sub(0.5).mul(o.spacing ?? (o.range * 2) / 332).mul(sward);
     const foot = root.add(fine ? vec3(swardOut.x, 0, swardOut.y).mul(o.field ? 1 : 0) : vec3(out2.x, 0, out2.y).mul(min(footRadius, sh.y)));
     const spinTo = hashCell(hcell.add(19.3)).mul(6.2832);
     const toCam = o.spin ? vec2(cos(spinTo), sin(spinTo)) : normalize(vec2(seenFrom.x.sub(foot.x), seenFrom.z.sub(foot.z)).add(1e-4));
@@ -2245,7 +2249,7 @@ export function createGrass(options: GrassOptions): Grass {
     const mat = leafMaterial(() => {
       const { hcell, r0, xz } = place(attribute("aGrassCell", "vec4").x);
       return { hcell, r0, xz };
-    }, { fine, field: true, range: L.range, folded: foldedLayer }, name);
+    }, { fine, field: true, range: L.range, spacing: L.spacing, folded: foldedLayer }, name);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = `grass-${name}`;
     // (Its plants are wherever the camera is; there is no box to cull it by.)
