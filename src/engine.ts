@@ -584,9 +584,11 @@ export interface Grass {
    * ground's height where the picture looks, if the host knows it: the
    * finest squares are drawn only while the eye is close enough over it.
    * `lookAt.x` and `z` are used only with `focus` (above), when they are
-   * where the leaves are centred.
+   * where the leaves are centred. `pictureHeight`: the height in pixels of
+   * the picture the grass is about to be drawn into, when that is not the
+   * canvas (a small inset): how wide a leaf is in pixels goes by it.
    */
-  update(renderer: THREE.WebGPURenderer, camera: THREE.Camera, timeS: number, lookAt?: { x: number; y?: number; z: number; focus?: boolean }): void;
+  update(renderer: THREE.WebGPURenderer, camera: THREE.Camera, timeS: number, lookAt?: { x: number; y?: number; z: number; focus?: boolean }, pictureHeight?: number): void;
   /** Which of it is drawn: the far tufts, the fine leaves. */
   show: { tufts: boolean; leaves: boolean };
   /**
@@ -1170,9 +1172,24 @@ export function createGrass(options: GrassOptions): Grass {
   const reach = map.bounds;
   const canopyTarget = reach ? new THREE.RenderTarget(CANOPY_SIZE, CANOPY_SIZE, { type: THREE.UnsignedByteType, depthBuffer: false }) : null;
   if (canopyTarget) canopyTarget.texture.minFilter = canopyTarget.texture.magFilter = THREE.LinearFilter;
+  /**
+   * And a finer one about the eye, `CANOPY_NEAR_M` across at the same size (12 cm to a texel), following it:
+   * the whole ground's is a metre or so to a texel over a golf hole, coarser than the first steps a shadow is
+   * looked for in. Leaves and flowers read it where they are within it; the host's ground does not, its
+   * shader having no texture to spare.
+   */
+  const CANOPY_NEAR_M = 64;
+  /** The near picture moves when the eye has gone this far (m) from its middle, and in steps of this. */
+  const CANOPY_NEAR_STEP = 8;
+  const canopyNear = reach ? new THREE.RenderTarget(CANOPY_SIZE, CANOPY_SIZE, { type: THREE.UnsignedByteType, depthBuffer: false }) : null;
+  if (canopyNear) canopyNear.texture.minFilter = canopyNear.texture.magFilter = THREE.LinearFilter;
+  /** The ground a canopy picture is being drawn over (x0, z0, x1, z1), and the near one's (none yet). */
+  const uCanopyRect = uniform(new THREE.Vector4(0, 0, 1, 1));
+  const uNearRect = uniform(new THREE.Vector4(0, 0, -1, -1));
+  let nearAt: { x: number; z: number } | null = null;
   const canopyQuad = (() => {
     if (!reach) return null;
-    const at = mix(vec2(reach.x0, reach.z0), vec2(reach.x1, reach.z1), uv());
+    const at = mix(vec2(uCanopyRect.x, uCanopyRect.y), vec2(uCanopyRect.z, uCanopyRect.w), uv());
     const here = lookup(at);
     const alive = step(here.species, float(MAX_SPECIES - 0.5));
     const tall = row(int(min(here.species, float(MAX_SPECIES - 1))), 0).x.mul(alive);
@@ -1192,10 +1209,16 @@ export function createGrass(options: GrassOptions): Grass {
     mat.colorNode = vec4(min(tall.div(CANOPY_MAX), float(1)), crown.mul(0.5).add(0.5), basin.mul(0.5).add(0.5), 1);
     return new THREE.QuadMesh(mat);
   })();
-  const canopyAt = (xz: Vec2): THREE.Node<"float"> => {
+  const canopyAt = (xz: Vec2, near = true): THREE.Node<"float"> => {
     if (!reach || !canopyTarget) return float(0);
     const at = xz.sub(vec2(reach.x0, reach.z0)).div(vec2(reach.x1 - reach.x0, reach.z1 - reach.z0));
-    return (texture(canopyTarget.texture, at).level(float(0)) as unknown as Vec4).x.mul(CANOPY_MAX);
+    const whole = (texture(canopyTarget.texture, at).level(float(0)) as unknown as Vec4).x.mul(CANOPY_MAX);
+    if (!near || !canopyNear) return whole;
+    // (Within the near picture, a metre in from its edge, its finer reading; the whole ground's beyond.)
+    const nearUv = xz.sub(vec2(uNearRect.x, uNearRect.y)).div(vec2(uNearRect.z, uNearRect.w).sub(vec2(uNearRect.x, uNearRect.y)).max(vec2(1e-3)));
+    const fine = (texture(canopyNear.texture, nearUv).level(float(0)) as unknown as Vec4).x.mul(CANOPY_MAX);
+    const inside = step(uNearRect.x.add(1), xz.x).mul(step(xz.x, uNearRect.z.sub(1))).mul(step(uNearRect.y.add(1), xz.y)).mul(step(xz.y, uNearRect.w.sub(1)));
+    return mix(whole, fine, inside);
   };
   /**
    * How dry a place is for where it lies, -1 (a hollow, where water gathers) to 1 (a crown, which sheds
@@ -1225,7 +1248,7 @@ export function createGrass(options: GrassOptions): Grass {
     const rise = uSun.y.div(across);
     let lit = float(1) as THREE.Node<"float">;
     for (const far of [0.05, 0.12, 0.28, 0.6, 1.2]) {
-      const over = canopyAt(xz.add(to.mul(far))).sub(up.add(rise.mul(far)));
+      const over = canopyAt(xz.add(to.mul(far)), world).sub(up.add(rise.mul(far)));
       lit = min(lit, float(1).sub(smoothstep(float(0), float(0.015 + far * 0.1), over)));
     }
     return mix(float(1), lit, uShade.x).mul(world && options.world?.sun ? clamp(options.world.sun(xz), float(0), float(1)) : float(1));
@@ -1252,7 +1275,7 @@ export function createGrass(options: GrassOptions): Grass {
   /** How much of the sky a point sees, 0..1: less beside taller grass, whichever way the sun is. */
   const skyOpen = (xz: Vec2, up: THREE.Node<"float">, world = true): THREE.Node<"float"> => {
     let shut = float(0) as THREE.Node<"float">;
-    for (const [dx, dz] of [[0.18, 0], [-0.18, 0], [0, 0.18], [0, -0.18]]) shut = shut.add(clamp(canopyAt(xz.add(vec2(dx, dz))).sub(up).div(0.27), float(0), float(1)));
+    for (const [dx, dz] of [[0.18, 0], [-0.18, 0], [0, 0.18], [0, -0.18]]) shut = shut.add(clamp(canopyAt(xz.add(vec2(dx, dz)), world).sub(up).div(0.27), float(0), float(1)));
     return float(1).sub(shut.mul(0.25).mul(uShade.y)).mul(world && options.world?.sky ? clamp(options.world.sky(xz), float(0), float(1)) : float(1));
   };
   /** What a leaf or the ground is lit by where the sun does not reach it: the sky's light alone. */
@@ -1542,7 +1565,7 @@ export function createGrass(options: GrassOptions): Grass {
     // the species' colour stands and, far off where the picture is its mean, nothing is left of it.
     // (Never from the very foot of its own stand: that dark is in `under` and in its picture already, and three
     // darks on the ground against sunlit tips is a grain the far ground has not got.)
-    const standsFor = canopyAt(xz).mul(STAND_SUN);
+    const standsFor = canopyAt(xz, !forHost).mul(STAND_SUN);
     const picture = row(k, 8);
     const mean = row(k, 9);
     // (Looked up twice, the second time turned and at another size, and the two mixed by a slow noise: one
@@ -3037,7 +3060,7 @@ export function createGrass(options: GrassOptions): Grass {
       setGroundLayer(rowIndex, px);
     },
     bakeGround,
-    update(renderer, camera, timeS, lookAt) {
+    update(renderer, camera, timeS, lookAt, pictureHeight) {
       camera.getWorldPosition(eye);
       camera.getWorldDirection(fwd);
       const hLen = Math.hypot(fwd.x, fwd.z);
@@ -3048,7 +3071,7 @@ export function createGrass(options: GrassOptions): Grass {
       uCamPos.value.copy(eye);
       // (A perspective camera's projection has 1 / tan(half its field of view) at [5].)
       renderer.getDrawingBufferSize(bufferSize);
-      uPixel.value = 2 / Math.max(1e-3, camera.projectionMatrix.elements[5]) / Math.max(1, bufferSize.y);
+      uPixel.value = 2 / Math.max(1e-3, camera.projectionMatrix.elements[5]) / Math.max(1, pictureHeight ?? bufferSize.y);
       {
         // (Half the picture's width as an angle, from the projection's [0], 1 / tan of it; then 12 degrees to
         // spare, and as much again as the eye is pitched down past 15 degrees, half as much once more.)
@@ -3115,12 +3138,29 @@ export function createGrass(options: GrassOptions): Grass {
       frame++;
       // (In its first ten seconds or so, every twentieth frame as before: a host's map textures may arrive a moment
       // after the grass is made.)
-      if (canopyTarget && canopyQuad && (canopyDirty > 0 || frame % (frame < 600 ? 20 : 600) === 0)) {
+      const redraw = canopyDirty > 0 || frame % (frame < 600 ? 20 : 600) === 0;
+      if (canopyTarget && canopyQuad && reach && redraw) {
         canopyDirty = Math.max(0, canopyDirty - 1);
         const before = renderer.getRenderTarget();
+        uCanopyRect.value.set(reach.x0, reach.z0, reach.x1, reach.z1);
         renderer.setRenderTarget(canopyTarget);
         canopyQuad.render(renderer);
         renderer.setRenderTarget(before);
+      }
+      // (The near picture: drawn again when the eye has gone a step from its middle, and whenever the whole is.)
+      if (canopyNear && canopyQuad && reach) {
+        const cx = Math.round(eye.x / CANOPY_NEAR_STEP) * CANOPY_NEAR_STEP;
+        const cz = Math.round(eye.z / CANOPY_NEAR_STEP) * CANOPY_NEAR_STEP;
+        if (redraw || !nearAt || nearAt.x !== cx || nearAt.z !== cz) {
+          nearAt = { x: cx, z: cz };
+          const h = CANOPY_NEAR_M / 2;
+          const before = renderer.getRenderTarget();
+          uCanopyRect.value.set(cx - h, cz - h, cx + h, cz + h);
+          renderer.setRenderTarget(canopyNear);
+          canopyQuad.render(renderer);
+          renderer.setRenderTarget(before);
+          uNearRect.value.set(cx - h, cz - h, cx + h, cz + h);
+        }
       }
       uBare.value.set(look.bare.r, look.bare.g, look.bare.b);
       far.uFocus.value.set(eye.x + f.x * layers.farAhead, eye.z + f.y * layers.farAhead);
@@ -3238,6 +3278,7 @@ export function createGrass(options: GrassOptions): Grass {
       }
       if (canopyQuad) (canopyQuad.material as THREE.Material).dispose();
       canopyTarget?.dispose();
+      canopyNear?.dispose();
     },
   };
 }

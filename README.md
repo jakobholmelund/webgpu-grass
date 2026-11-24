@@ -479,8 +479,10 @@ the fields made for you.
   over the map's ground, for its shadows and the lie of the ground. It is
   drawn again when the species change, and when the host says the map has
   (`grass.mapChanged()`); otherwise only every 600 frames. Its texels are
-  about a metre over a golf hole's ground, coarser than the shadows' first
-  steps.
+  about a metre over a golf hole's ground, so a second picture 64 m across
+  (12 cm to a texel) follows the eye, for the leaves' and flowers' shadows
+  within it; a host's ground keeps to the whole one (its shader has no
+  texture to spare).
 - **Shadows from anything but grass.** The grass keeps a picture of how
   tall it stands over the map's ground (if the map says what ground it
   covers), and leaves and ground look a little way towards the sun in it:
