@@ -657,6 +657,67 @@ export const MORE_GRASSES: { poaGreen: Species; kikuyuFairway: Species; kikuyuRo
 };
 
 /**
+ * The grasses of ground nobody mows but once a year, for the mixes a host makes of them (`mixedMap`): no
+ * stand of native grass is one grass. Each is drawn as it stands in high summer, gone to seed.
+ *
+ * Their leaves and stems are the floras' (Kew's GrassBase, the Flora of New Zealand, Flora of Victoria,
+ * Flora of North America):
+ *
+ * - Sheep's fescue (Festuca ovina): leaves folded to a bristle, 0.3 to 0.6 mm (Kew; 0.3 to 1.2 in New
+ *   England), 3 to 25 cm long, in dense tufts with ground between; stems 5 to 60 cm. Of dry, thin, sandy and
+ *   acid ground: a links' dunes, a heath. Greyer than red fescue, with more wax on it (an estimate).
+ * - Common bent (Agrostis capillaris): leaves flat, 1 to 2.5 mm (to 5), 2 to 13 cm long; stems 10 to 70 cm;
+ *   a very loose panicle of purplish-brown spikelets, so a stand of it in seed has a reddish haze. It
+ *   creeps by short runners. A greener grass than the fescues, with no wax.
+ * - Yorkshire fog (Holcus lanatus): leaves flat and soft with velvety hairs, 3 to 10 mm, to 25 cm long;
+ *   stems 30 to 110 cm; a panicle that goes from pinkish white to purple. A pale grey-green, matt for its
+ *   hairs, in tufts: the grass of a damp, rich meadow.
+ * - Sweet vernal grass (Anthoxanthum odoratum): leaves flat, 2 to 6.5 mm, 3.5 to 18 cm long; stems 12 to
+ *   50 cm (to 90); a dense, spike-like panicle, yellow-green, gold as it ripens. The first meadow grass to
+ *   flower, in April to June, and the smell of hay (coumarin).
+ * - Wavy hair-grass (Deschampsia flexuosa): leaves rolled to a thread, 0.3 to 0.6 mm (New Zealand; 0.3 to
+ *   0.8, Kew), 5 to 20 cm long, in dense tufts far overtopped by their stems, 20 to 75 cm; a loose panicle
+ *   on wavy branches, silvery and purplish. Of acid heath and open woods.
+ *
+ * Their seed heads stand where every grass's here does, a fifth over its leaves: the floras' stems stand
+ * further over some of them (wavy hair-grass's most), which a leaf's three joints cannot draw. The colours
+ * are set by eye from the floras' words; the habit by eye too, as with the others. None has flowers of
+ * its own: a host gives a mix its flowers.
+ */
+export const NATIVE_GRASSES: { sheepsFescue: Species; commonBent: Species; yorkshireFog: Species; sweetVernal: Species; wavyHairGrass: Species } = {
+  sheepsFescue: turf("Sheep's fescue", 4, {
+    height: 0.18, heightSpread: 0.7, density: 0.85, width: 0.00045, widthSpread: 0.00015, tip: "point",
+    splay: 1, droop: 0.9, twist: 0.8, seedHead: 1, seedShare: 0.15, stiffness: 0.3, clump: 1, tussock: 0.35, disorder: 1,
+    color: "#8b9f74", tipTint: [1.1, 1.08, 0.92], seedTint: [1.4, 1.3, 1.02], rootShade: 0.45, variation: 0.2, dry: 0.24, sheen: 0.8, edgeBlend: 0.8,
+    blooms: [],
+  }),
+  commonBent: turf("Common bent", 4, {
+    height: 0.2, heightSpread: 0.6, density: 0.9, width: 0.0018, widthSpread: 0.0008, tip: "point",
+    splay: 1, droop: 1.2, twist: 1, seedHead: 1, seedShare: 0.35, stiffness: 0.2, clump: 0.5, disorder: 1,
+    color: "#73975a", tipTint: [1.08, 1.06, 0.92], seedTint: [1.32, 1.02, 0.98], rootShade: 0.45, variation: 0.22, dry: 0.12, sheen: 0.2, edgeBlend: 0.8,
+    blooms: [],
+  }),
+  yorkshireFog: turf("Yorkshire fog", 5, {
+    height: 0.35, heightSpread: 0.6, density: 0.7, width: 0.005, widthSpread: 0.002, tip: "point",
+    splay: 0.9, droop: 1.1, twist: 1, seedHead: 1, seedShare: 0.3, stiffness: 0.15, clump: 0.8, disorder: 1,
+    color: "#8ea57a", tipTint: [1.08, 1.06, 0.96], seedTint: [1.45, 1.22, 1.24], rootShade: 0.4, variation: 0.2, dry: 0.12, sheen: 0, edgeBlend: 1,
+    blooms: [],
+  }),
+  sweetVernal: turf("Sweet vernal grass", 5, {
+    height: 0.25, heightSpread: 0.6, density: 0.7, width: 0.0035, widthSpread: 0.0015, tip: "point",
+    splay: 0.8, droop: 0.9, twist: 1, seedHead: 1, seedShare: 0.3, stiffness: 0.35, clump: 0.7, disorder: 1,
+    color: "#71944f", tipTint: [1.1, 1.08, 0.9], seedTint: [1.5, 1.36, 0.86], rootShade: 0.4, variation: 0.22, dry: 0.18, sheen: 0.4, edgeBlend: 1,
+    blooms: [],
+  }),
+  wavyHairGrass: turf("Wavy hair-grass", 4, {
+    height: 0.18, heightSpread: 0.7, density: 0.9, width: 0.00045, widthSpread: 0.0002, tip: "point",
+    splay: 1, droop: 1, twist: 1, seedHead: 1, seedShare: 0.4, stiffness: 0.25, clump: 1, tussock: 0.3, disorder: 1,
+    color: "#6f9052", tipTint: [1.1, 1.08, 0.9], seedTint: [1.4, 1.26, 1.36], rootShade: 0.42, variation: 0.2, dry: 0.15, sheen: 0.6, edgeBlend: 0.8,
+    blooms: [],
+  }),
+};
+
+/**
  * Every species here by a name: a host makes its own list from them (`cloneSpecies` the ones it wants, in
  * the order of its map's numbers), as a course has the grasses it has.
  */
@@ -672,6 +733,7 @@ export const GRASSES = {
   bermudaFairway: MORE_TURF.bermuda,
   bluegrassLawn: MORE_TURF.bluegrass,
   ...MORE_GRASSES,
+  ...NATIVE_GRASSES,
   softRush: MORE_PLANTS.rush,
 } satisfies Record<string, Species>;
 

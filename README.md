@@ -133,6 +133,57 @@ the share of a species' stems in seed, which then stand a fifth over the
 leaves) and stands in tussocks further apart than the field's clumps
 (`clumpScale`, a multiple of `look.clumpSize`), with open ground between.
 
+## Native grass, as mixes
+
+Ground nobody mows but once a year is never one grass. `NATIVE_GRASSES`
+holds the grasses such ground is made of, each as it stands in high
+summer, gone to seed, with leaves and stems from the floras (Kew's
+GrassBase, the Flora of New Zealand, Flora of Victoria, Flora of North
+America):
+
+| Name | What | Leaf |
+| --- | --- | --- |
+| `sheepsFescue` | Dry, thin, sandy and acid ground: bristle leaves in dense grey tufts with ground between | 0.3–0.6 mm |
+| `commonBent` | Flat green leaves and a loose panicle of purplish-brown spikelets, a reddish haze in seed | 1–2.5 mm |
+| `yorkshireFog` | A damp, rich meadow's: soft, hairy, pale grey-green leaves, pinkish panicles | 3–10 mm |
+| `sweetVernal` | The first meadow grass to flower: a gold, spike-like panicle | 2–6.5 mm |
+| `wavyHairGrass` | Acid heath: thread leaves in tufts, silvery-purple panicles on wavy branches | 0.3–0.6 mm |
+
+A stand of several is a mix: one grass is the stand's body (its lead)
+and the others grow in it in patches of their own sizes.
+`mixedMap(source, mixes)` wraps a host's map: where the map says a mix's
+lead, each member takes its share of the place in colonies about its
+`patchSize` across, and the lead keeps the rest.
+
+```ts
+const map = mixedMap(fieldMap({ ... }), [
+  // Row 8 is red fescue in seed; 9 sheep's fescue, 10 common bent: a links' rough.
+  { species: 8, members: [{ species: 9, share: 0.3, patchSize: 1.5 }, { species: 10, share: 0.15, patchSize: 2 }] },
+]);
+```
+
+The members are rows of their own in the species list, so a mix's flowers
+are its members' (`Species.blooms`), up to four to each. A patch is part
+of its stand: the place's distance to another stand stays the map's, so
+tufts, flowers and a stand's straying edge are as they were, and two
+grasses of a mix run into each other at a patch's edge as far as each
+lets its edge stray (`edgeBlend`). A member costs nine looks at a hash for
+every place the grass asks about.
+
+The colonies are worked out by plain arithmetic in `src/mixshare.ts`,
+which the shaders' half follows step for step: `mixAt(mix, chances, x, z)`
+says which grass grows at a place, and `test/mix.test.mjs` holds each
+member to its share within two points. `mixChances` throws on a mix that
+cannot be had: members taking more than the whole stand, or one wanting
+more of what the members before it leave than its colonies can cover
+(`mostCover`, about three fifths).
+
+The habit and the colours were set by eye from the floras' words. A
+grass's seed heads stand a fifth over its leaves, whatever the floras say
+(wavy hair-grass's stems stand far over its leaves); how big the patches
+of each grass are in a real stand was not found, and the sizes in the
+example are guesses from how each spreads.
+
 ## Where the numbers come from
 
 A species' leaf breadth and, for the grass nobody mows, its height are set
