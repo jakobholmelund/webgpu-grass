@@ -335,6 +335,11 @@ const GUST_PACE_PER_MS = 0.55;
 const GUST_REPEAT_M = 61 * 380;
 /** How long a dead leaf is beside a live one of the same plant. */
 const DEAD_LEAF_TALL = 0.62;
+/** The breadth of a patch where a grass is thick with seed heads or has hardly one (m), and of the slower swell over a stand (`Species.seedShare`). */
+const SEED_PATCH_M = 3.7;
+/** The breadth of a patch of a stand where more of its leaves are dead, or fewer (`Species.dry`). */
+const DEAD_PATCH_M = 6.1;
+const SEED_DRIFT_M = 23;
 /** How much taller than the leaves a stem in seed stands, where only some are (`Species.seedShare`). */
 const SEED_STALK_TALL = 1.2;
 /** Where a flower's centre is broadest, as a share of the way from its top to its foot. */
@@ -429,6 +434,12 @@ export interface WorldLight {
   sun?(xz: Vec2): THREE.Node<"float">;
   /** How much of the sky the place sees, 0..1: under a tree's crown, in a hollow, against a wall. */
   sky?(xz: Vec2): THREE.Node<"float">;
+  /**
+   * How much of the day's light a place goes without, 0 (open) to 1 (under a closed crown): for what
+   * grows there, not for how it is lit now, so it does not move with the sun or sway with the leaves.
+   * The flowers of open grassland take little of it (`Flower.colony`). Not given: open everywhere.
+   */
+  shelter?(xz: Vec2): THREE.Node<"float">;
   /** What the grass's colour is multiplied by there: wet grass is darker, grass under leaves is lit green. */
   tint?(xz: Vec2): Vec3;
   /**
@@ -1556,7 +1567,15 @@ export function createGrass(options: GrassOptions): Grass {
     const rb = hashCell(hcell.add(b.mul(7.3)));
     // A seed head, on the share of the stems that carry one (`seedShare`).
     const seedShare = row(k, 11).w;
-    const fertile = step(hashCell(hcell.add(b.mul(5.9).add(41.0))), seedShare);
+    // (Not evenly: a grass flowers in patches, a clone or a run of good ground thick with heads and the next
+    // few metres with hardly one, and a stand over tens of metres more or less. So the share is the stand's
+    // over its whole ground, some of it twice that and some a fifth: `SEED_PATCH_M`, `SEED_DRIFT_M`.)
+    const seedPatch = mix(float(0.2), float(2), smoothstep(float(0.3), float(0.7), noise(xz.div(SEED_PATCH_M).add(0.37)).g))
+      .mul(mix(float(0.55), float(1.3), smoothstep(float(0.25), float(0.75), noise(xz.div(SEED_DRIFT_M).add(0.83)).b)));
+    const fertile = step(hashCell(hcell.add(b.mul(5.9).add(41.0))), seedShare.mul(seedPatch));
+    // (So too its dead leaves (`Species.dry`): more where it has stood longest unthinned and on the dry
+    // crowns, which burn first, fewer in the hollows; the share is the stand's over its whole ground.)
+    const deadShare = clamp(tint.w.mul(mix(float(0.35), float(1.6), smoothstep(float(0.25), float(0.75), noise(xz.div(DEAD_PATCH_M).add(0.53)).r))).mul(float(1).add(dryAt(xz).mul(0.5))), float(0), float(1));
     const seed = form.z.mul(fertile);
     // A tuft's blades stand about its root, a mown sward's over its whole cell; none over the border.
     const footRadius = mix(float(0.02).add(rb.mul(0.16)), float(0.03).add(pow(rb, float(0.5)).mul(0.17)), isCut);
@@ -1595,7 +1614,7 @@ export function createGrass(options: GrassOptions): Grass {
     const side = vec3(toCam.y.negate(), 0, toCam.x).mul(cos(turn)).add(vec3(toCam.x, 0, toCam.y).mul(sin(turn)));
     // (Half the leaf's breadth: the strip's vertices stand at -1 and 1 across it.)
     // (A dead leaf has dried and rolled in on itself: half as broad as it was.)
-    const leafWidth = blade.x.add(rb.mul(blade.y)).mul(0.5).mul(float(1).add(uStyle.x.mul(2.5))).mul(mix(float(1), mix(float(0.5), float(1), stem), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w)));
+    const leafWidth = blade.x.add(rb.mul(blade.y)).mul(0.5).mul(float(1).add(uStyle.x.mul(2.5))).mul(mix(float(1), mix(float(0.5), float(1), stem), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), deadShare)));
     // In a field a leaf is never drawn thinner than a pixel or so, or it
     // flickers in and out; and a leaf broadened for the leaves thinned out
     // about it is never broadened past a few pixels, so what is seen close,
@@ -1616,7 +1635,7 @@ export function createGrass(options: GrassOptions): Grass {
     const mown = max(isCut, isSquare);
     // (A dead leaf is an old one: the plant's lowest, down in the stand under the live ones, not up among their tips.)
     // (A dead stem is last year's, and stands as tall as this year's.)
-    const oldLeaf = mix(float(1), mix(float(DEAD_LEAF_TALL), float(1), stem), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w));
+    const oldLeaf = mix(float(1), mix(float(DEAD_LEAF_TALL), float(1), stem), step(hashCell(hcell.add(b.mul(9.7).add(63.0))), deadShare));
     // (Where only some stems are in seed, those stand a fifth over the leaves, as a flowering stem does.)
     const seedStalk = mix(float(1), float(SEED_STALK_TALL), fertile.mul(step(float(1e-3), form.z)).mul(float(1).sub(step(float(0.999), seedShare))));
     const bladeTall = mix(tall.mul(float(1).sub(stand.y.mul(0.5)).add(rh.mul(stand.y))), tall.mul(float(0.85).add(rh.mul(0.95))), mown).mul(oldLeaf).mul(seedStalk);
@@ -1761,7 +1780,7 @@ export function createGrass(options: GrassOptions): Grass {
       leafCol = mix(near, colLit.mul(mix(rootIs, float(1), STAND_MEAN)).mul(mix(vec3(1), vec3(seedTint.x, seedTint.y, seedTint.z), seed.mul(0.5))), toGround);
     }
     // Some leaves are dead: straw, the lighter for standing among green.
-    const isDry = step(hashCell(hcell.add(b.mul(9.7).add(63.0))), tint.w).mul(float(1).sub(toGround)).mul(float(1).sub(flat));
+    const isDry = step(hashCell(hcell.add(b.mul(9.7).add(63.0))), deadShare).mul(float(1).sub(toGround)).mul(float(1).sub(flat));
     // (Straw is its own colour, not the leaf's green gone grey: a grey leaf among green ones looks pink.
     // It is lit as the leaf it was would be: by how bright that leaf is beside its species' own colour.)
     const lum = vec3(0.3, 0.5, 0.2);
@@ -2343,6 +2362,64 @@ export function createGrass(options: GrassOptions): Grass {
   const BLOOM_DOTS_TO = [15, 19];
   /** A place's number for its species and flower: the flower's row and the species' row times this. */
   const BLOOM_KEY = 32;
+  /**
+   * Where a flower grows (`Flower.colony`), as plants of open grassland do: in colonies, a plant's runners
+   * or its own seed about where it took, clumped round a centre and thinning out from it (as a Thomas
+   * cluster process has them); the colonies only where the ground suits that flower, which over tens of
+   * metres is some ground and not other; and a few strays between colonies, from seed carried further.
+   * So most of a stand's ground has none of a flower, some has it thick, and the edge of each is ragged.
+   *
+   * `COLONY_APART`: how far apart (in colony radii) the centres could stand, where every place for one
+   * held one. `COLONY_SHARE`: the share of the ground within a radius of a centre if all did (pi over
+   * the square of `COLONY_APART`): a flower's `cover` over it is how many do. `HABITAT_M`: the breadth of
+   * the ground that suits a flower or does not. `STRAYS`: how thick the strays are, as a share of a
+   * colony's heart. `SHELTER_FROM`, `SHELTER_TO`: the shelter (`WorldLight.shelter`) from which a meadow
+   * flower begins to give way, and by which it has gone.
+   */
+  const COLONY_APART = 3.2;
+  const COLONY_SHARE = Math.PI / (COLONY_APART * COLONY_APART);
+  const HABITAT_M = 34;
+  const STRAYS = 0.035;
+  /**
+   * A flower's own plant: its heads come up together from one rosette or one stretch of runner, a hand or
+   * two across (as a plant creeps 1 to 27 cm a year: `Flower.colony`). The ground is squared off this
+   * broad (m) and a share of its squares (`PLANT_SHARE`) hold a plant, the flowers of those that do
+   * standing as thick as all would have.
+   */
+  const PLANT_M = 0.26;
+  const PLANT_SHARE = 0.4;
+  /**
+   * How a flower's flowering falls with the light it goes without (`WorldLight.shelter`): by this for each
+   * tenth of the open's light lost, as meadow herbs at a forest's edge (the chance of one flowering fell
+   * 21 and 35 per cent a tenth at two sites, Celis et al. 2019); and none below its least light
+   * (`Flower.light`).
+   */
+  const FLOWERING_PER_TENTH = 0.72;
+  /**
+   * How thick a flower stands at a place for its colonies, 0.. (1 the heart of a middling colony): the
+   * nearest of the colonies about it, each kept if it suits (`kept`, by the ground at its own centre),
+   * its own size and its own thickness, plus the strays. Within a shader function (`Fn`).
+   */
+  const colonyAt = (xz: Vec2, radius: THREE.Node<"float">, kept: (centre: Vec2) => THREE.Node<"float">, salt: number): THREE.Node<"float"> => {
+    const cellM = radius.mul(COLONY_APART);
+    const g = xz.div(cellM);
+    const home = floor(g);
+    const thick = float(0).toVar();
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const cell = home.add(vec2(dx, dz));
+        const hc = mod(cell, float(4096)).add(vec2(salt * 0.731, salt * 0.317));
+        // (Somewhere in its square, not on its edge; most small and a few large; some thick, some thin.)
+        const centre = cell.add(vec2(hash21(hc.add(1.3)), hash21(hc.add(7.9))).mul(0.7).add(0.15)).mul(cellM);
+        const reach = radius.mul(exp(hash21(hc.add(4.1)).sub(0.5).mul(1.3)));
+        const heart = mix(float(0.55), float(1.45), hash21(hc.add(9.7)));
+        const there = step(hash21(hc.add(2.9)), kept(centre));
+        const d2 = dot(xz.sub(centre), xz.sub(centre)).div(reach.mul(reach));
+        thick.assign(max(thick, heart.mul(exp(d2.mul(-1.6))).mul(there)));
+      }
+    }
+    return thick;
+  };
   const bloomSites = (L: { count: number; spacing: number; ahead: number }) => {
     const total = L.count * L.count;
     // What the pass leaves for each place: its root and which flower (`BLOOM_KEY`; -1 for none), its head and
@@ -2371,13 +2448,22 @@ export function createGrass(options: GrassOptions): Grass {
       const cover = row(k, 15);
       const site = row(k, 16);
       const inPatches = row(k, 17);
-      // Each of the species' flowers in drifts of its own: where a slow noise is over what leaves its share of
-      // the ground (more of it where the lie of the ground suits it, `Bloom.site`), or in the species' patches.
-      // (Two looks at the noise, and its four channels paired four ways: four drifts unlike each other.)
-      const slow = noise(xz.div(7.3).add(0.41));
-      const quick = noise(xz.div(1.9).add(0.77));
-      const drifts = [slow.r.mul(0.6).add(quick.g.mul(0.4)), slow.g.mul(0.6).add(quick.b.mul(0.4)), slow.b.mul(0.6).add(quick.a.mul(0.4)), slow.a.mul(0.6).add(quick.r.mul(0.4))];
-      const dry = dryAt(xz);
+      // Each of the species' flowers in colonies of its own (`colonyAt`), where the ground suits it: by a
+      // slow noise of its own (some ground and not other), by the lie of the ground (`Bloom.site`), and out
+      // of the trees' shade (`WorldLight.shelter`). Or in the species' patches.
+      const world = options.world;
+      const open = (at: Vec2, least: THREE.Node<"float">) => {
+        if (!world?.shelter) return float(1);
+        const lit = float(1).sub(clamp(world.shelter(at), float(0), float(1)));
+        return pow(float(FLOWERING_PER_TENTH), float(1).sub(lit).mul(10)).mul(smoothstep(least.sub(0.05), least.add(0.05), lit));
+      };
+      // (Its plants: the place's square, the squares a little warped so they do not line up.)
+      const plantWarp = noise(xz.div(1.3).add(0.19));
+      const plantCell = floor(xz.add(vec2(plantWarp.r, plantWarp.b).sub(0.5).mul(PLANT_M)).div(PLANT_M));
+      const habitat = (at: Vec2, j: number) => {
+        const n = noise(at.div(HABITAT_M).add(vec2(0.13 + j * 0.29, 0.61 - j * 0.17)));
+        return smoothstep(float(0.36), float(0.64), [n.r, n.g, n.b, n.a][j]);
+      };
       const patched = smoothstep(float(0.35), float(0.65), inPatch(xz, k));
       // (On the species' tussocks: a tussock grass's flowering stems rise from its tussocks, not the open ground.)
       const clump = nearestClump(xz, k);
@@ -2387,10 +2473,16 @@ export function createGrass(options: GrassOptions): Grass {
       const upTo = float(0).toVar();
       for (let j = 0; j < MAX_BLOOMS; j++) {
         const at = (v: Vec4) => [v.x, v.y, v.z, v.w][j];
-        const share = clamp(at(cover).mul(float(1).add(at(site).mul(dry).mul(1.8))), float(0), float(1));
-        const from = clamp(float(0.5).add(float(0.5).sub(share).mul(0.6)), float(0.05), float(0.95));
-        // (`where`: 0 in drifts, 1 in the patches, 2 in drifts on the tussocks.)
-        const inDrifts = smoothstep(from.sub(0.05), from.add(0.05), drifts[j]).mul(step(float(1e-3), share));
+        // (How many of the places for a colony hold one: its cover over the share all of them would take, twice
+        // that where the ground suits it, as about half of it does; more on the ground's lie it likes.)
+        const fRow = int(max(at(ids), float(0)));
+        const radius = frow(fRow, 2).w;
+        const least = frow(fRow, 4).x;
+        const suits = (centre: Vec2) => clamp(at(cover).div(COLONY_SHARE).mul(2).mul(float(1).add(at(site).mul(dryAt(centre)).mul(1.8))), float(0), float(1)).mul(habitat(centre, j)).mul(open(centre, least));
+        const aPlant = step(hash21(mod(plantCell, float(4096)).add(vec2(3.7 + j * 1.9, 8.3 - j * 2.3))), float(PLANT_SHARE)).div(PLANT_SHARE);
+        const thick = colonyAt(xz, radius, suits, 11 + j * 17).add(habitat(xz, j).mul(STRAYS)).mul(open(xz, least)).mul(aPlant);
+        // (`where`: 0 in colonies, 1 in the patches, 2 in colonies on the tussocks.)
+        const inDrifts = thick.mul(step(float(1e-3), at(cover)));
         const inDrift = mix(mix(inDrifts, patched, step(float(0.5), at(inPatches))), inDrifts.mul(onTussock), step(float(1.5), at(inPatches)));
         // (A place has one flower at most: each flower takes its own share of the places, one after another.)
         upTo.addAssign(at(perM2).mul(L.spacing * L.spacing).mul(inDrift).mul(uAmount).mul(step(float(-0.5), at(ids))));
@@ -2400,9 +2492,11 @@ export function createGrass(options: GrassOptions): Grass {
       const f = int(max(chosen, float(0)));
       const ground = height.sample(xz);
       const root = vec3(xz.x, ground.height, xz.y);
-      // How tall it stands: its own height, some more and some less, and over the grass if the grass is taller.
-      // (Well over it: a flower in grass grows its stalk to reach the light, and one drawn down among the leaves is not seen from any way off.)
-      const tall = max(frow(f, 1).y.mul(mix(float(0.8), float(1.25), luck)), row(k, 0).x.mul(mix(float(1.25), float(1.6), luck)));
+      // How tall it stands: its own height, some more and some less; and in grass as tall as it or taller,
+      // drawn up towards the light by as much as two fifths again, and no more: a short flower in long
+      // grass stands down among the leaves, half seen or not at all, as it does.
+      const own = frow(f, 1).y.mul(mix(float(0.8), float(1.25), luck));
+      const tall = own.mul(float(1).add(smoothstep(float(0.5), float(1.5), row(k, 0).x.div(max(own, float(1e-3)))).mul(0.4)));
       // The wind: it nods downwind, further in a gust, and swings a little about that.
       const wDir = normalize(vec2(uWind.x, uWind.y).add(vec2(1e-4, 0)));
       const gustAt = xz.sub(vec2(uGust.x, uGust.y));

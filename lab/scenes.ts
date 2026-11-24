@@ -189,7 +189,7 @@ export const SCENES: Scene[] = [
   {
     id: "flowers-in-the-deep-rough",
     title: "Flowers in the deep rough",
-    blurb: "The deep rough's four, here thick on the ground (they come in thin drifts as it is made): cat's-ear and bird's-foot trefoil on the drier ground, ox-eye daisies, creeping buttercup down in the hollows. Petals within a few strides of the eye, dots of their colour beyond.",
+    blurb: "The deep rough's four, here in more colonies than it has as it is made, and still not everywhere: cat's-ear and bird's-foot trefoil on the drier ground, ox-eye daisies, creeping buttercup down in the hollows. Petals within a few strides of the eye, dots of their colour beyond.",
     species: turf((list) => {
       list[DEEP_ROUGH].blooms = [
         { flower: "catsear", perM2: 10, cover: 0.5, site: 0.5, where: "drifts" },
@@ -199,7 +199,7 @@ export const SCENES: Scene[] = [
       ];
     }),
     plot: DEEP_ROUGH, row: DEEP_ROUGH,
-    view: { x: 14, z: -6, eye: 0.42, yaw: -0.9, pitch: -0.3, fov: 42 },
+    view: { x: 6, z: 0, eye: 0.42, yaw: -0.9, pitch: -0.3, fov: 42 },
     sun: [150, 42], wind: [90, 3],
   },
   {

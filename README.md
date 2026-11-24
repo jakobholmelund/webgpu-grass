@@ -209,14 +209,37 @@ flower (`"daisy"`, `"buttercup"`, `"dandelion"`, `"clover"`,
 `"speedwell"`, `"selfheal"`, `"kikuyu"`, `"oxeye"`, `"redClover"`,
 `"catsear"`, `"knapweed"`, `"yarrow"`, `"harebell"`, `"birdsfoot"`,
 `"plantain"`, or one of the host's own, given as `flowers` when the grass
-is made) and says how many to the square metre where they grow (`perM2`),
-the share of the stand's ground they grow on (`cover`, since flowers come
-in drifts, each flower in drifts of its own), and where on the ground they
-take (`site`: creeping buttercup in the wet hollows, cat's-ear on the dry
-banks, by the lie of the ground as a species' patches go). A flower with
-`where: "patches"` grows only in the species' patches, as white clover
-flowers where the clover is. Up to sixteen kinds of flower are drawn at
-once.
+is made) and says how many to the square metre in the heart of one of its
+colonies (`perM2`), the share of the stand's ground its colonies take
+(`cover`), and where on the ground they take (`site`: creeping buttercup in
+the wet hollows, cat's-ear on the dry banks, by the lie of the ground as a
+species' patches go). A flower with `where: "patches"` grows only in the
+species' patches, as white clover flowers where the clover is. Up to
+sixteen kinds of flower are drawn at once.
+
+Flowers grow as the plants of open grassland do, not evenly. Each flower
+comes in colonies, a plant's runners or its own seed about where it took:
+thickest at a centre and thinning out from it, some small and a few large
+(`Flower.colony`, the radius most of one's flowers stand in, broad for a
+creeper such as yarrow or white clover, small for one that only seeds near
+itself). Ecologists draw clumped plants the same way (a Thomas cluster
+process); no one has fitted one to these flowers, so the sizes are set from
+how far each creeps in a year and how far seed falls (see `FLOWERS`). The colonies stand only where the ground suits that flower: a
+slow noise of its own over some thirty metres, so one bank has it and the
+next has none; the lie of the ground (`site`); and out of the trees' shade,
+where a host says how much of the day's light a place goes without
+(`world.shelter`; `Flower.light`, the least light it flowers in). A few
+strays grow between colonies, and a flower's heads come up a few together,
+from one plant. So most of a stand's
+ground has none of a given flower and some has it thick. A flower stands
+at its own height; in grass as tall as it is or taller it reaches up by up
+to two fifths again, and no more, so a short flower in long grass is down
+among the leaves.
+
+A grass's seed heads (`seedShare`, the share of its stems in seed) come in
+patches too: some ground a few metres across thick with heads and the next
+with hardly one, and a slower swell over tens of metres; `seedShare` is
+the share over the stand as a whole.
 
 A `Flower` is plain data, as a species is: its form, how many petals, how
 long and broad, how far they rise from flat (or, below nothing, hang), the
@@ -307,7 +330,7 @@ It is TypeScript source (`src/index.ts`), for a bundler that takes
 TypeScript, and `three` is a peer: the host's own copy, r187.
 
 What stands over the grass and is not grass is the host's to tell it, as
-`createGrass({ ..., world })`: three functions of a place, any of them left
+`createGrass({ ..., world })`: functions of a place, any of them left
 out.
 
 - `world.sun(xz)`: how much of the sun reaches the place, 0 to 1. A
@@ -315,6 +338,11 @@ out.
 - `world.sky(xz)`: how much of the sky it sees, 0 to 1. Under a crown, in
   a hollow.
 - `world.tint(xz)`: what the grass's colour is multiplied by. Wet grass.
+- `world.shelter(xz)`: how much of the day's light the place goes without,
+  0 open to 1 under a closed crown, for what grows there: a flower flowers
+  less the less light it has (by 0.72 for each tenth lost, as meadow herbs
+  at a forest's edge do) and not at all below its least (`Flower.light`).
+  It should not move with the sun or the leaves' sway.
 - `world.air(colour, at)`: the air between a leaf and the eye, for a host
   with haze of its own: the colour that reaches the eye.
 

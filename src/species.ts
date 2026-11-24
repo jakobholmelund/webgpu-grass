@@ -471,6 +471,10 @@ export const TURF_SPECIES: Species[] = [
     // dense with them. Its culms in seed are 25 to 104 cm in Flora of Australia; the rough a course leaves
     // stands lower, as the README says.)
     width: 0.0006, widthSpread: 0.0003,
+    // (Not every stem in seed: in a mown mountain meadow 6 to 21 per cent of red fescue's shoots flowered,
+    // as the year went (Herben et al. 1993, Preslia), and a shoot is a few leaves to its one flowering stem.
+    // Left unmown it flowers more freely; a tenth of what is drawn, and that in patches.)
+    seedShare: 0.1,
     // (Thin, dry, unmown ground: cat's-ear most, ox-eye daisies, harebells, yarrow.)
     blooms: [
       { flower: "catsear", perM2: 8, cover: 0.18, site: 0.6, where: "drifts" },
