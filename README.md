@@ -178,6 +178,24 @@ here: it was set by eye.
   shapes with hazy edges, as drought makes. A colony's edge is ragged at a
   few runners' breadth, and no colony is cut off by the grid it is placed
   on.
+  Where patches get in follows the lie of the ground (`patchSite`, below)
+  and `patchEdge`: towards the stand's edge and into the trees' shade, as
+  annual meadow-grass comes into a bent green from the collar and takes the
+  shaded ground first (USGA), or away from them, as the bent left in a
+  meadow-grass green holds out in the open middle.
+- **Strains.** A green is not one plant: a bent sown from seed bred of a
+  few parents, or a green grown over by many strains of annual
+  meadow-grass, comes to be a quilt of touching patches each a shade unlike
+  the next (USGA: "a patchwork quilt"), most coming out of winter and going
+  into it and hardly at all in summer. `mosaic` says how unlike (a share of
+  the colour: two or three per cent, set by eye; five read as camouflage)
+  and `mosaicSize` how broad; `look.strains` how much the season shows it.
+  Where two strains meet the line is soft.
+- **A dry spell.** `look.drought` browns the mown grass that is prone to
+  it (`scorch`): small spots a hand to a foot across, gathered on the
+  crowns, and a ring a mower's width in from the stand's edge, where the
+  clean-up pass turns, as greens go first (USGA; K-State on localized dry
+  spot). Straw, never bare. How dry a course is, is the host's to say.
 - **The lie of the ground.** Where the map gives its `bounds`, each place
   is known as a crown (above the ground 2.5 m round it) or a hollow
   (below the ground 9 m round it). The grass is lusher in the hollows and

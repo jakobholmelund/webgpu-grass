@@ -483,6 +483,9 @@ export interface Grass {
    * `brightest`: no leaf is drawn brighter than this (a host that blooms what is bright sets it
    * under its threshold, or a back-lit leaf is a lamp).
    * `blooms`: whether the species' flowers are drawn (`Species.blooms`).
+   * `strains`: how unlike its strains a mown stand shows itself (`Species.mosaic`), 0..1: most in early
+   * spring and late autumn, when the strains wake and sleep at their own times, hardly at all in summer.
+   * `drought`: how dry the ground has been, 0..1: the mown grass browns in spots (`Species.scorch`).
    * `wet`: how wet the leaves are, 0 (dry) to 1 (dew, or rain): what a trail through them leaves
    * (`setTrail`). The colour of wet grass is the host's to give (`world.tint`).
    * `site`: how far the grass's colour follows the lie of the ground, lusher in the hollows
@@ -505,7 +508,7 @@ export interface Grass {
    * roots. `bare`: the
    * ground's colour where nothing grows.
    */
-  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; wet: number; blooms: boolean; amount: number; bare: THREE.Color };
+  look: { clumpSize: number; macro: number; edgeWobble: number; groundShade: number; stripes: number; shadow: number; occlusion: number; fold: number; relief: number; leafPixels: number; depth: number; mown: boolean; site: number; leafShadows: boolean; brightest: number; wet: number; blooms: boolean; amount: number; strains: number; drought: number; bare: THREE.Color };
   /** Read the species again after changing them (or give another list). */
   setSpecies(list: readonly Species[]): void;
   /**
@@ -648,6 +651,9 @@ export function createGrass(options: GrassOptions): Grass {
   const uTrailCount = uniform(0);
   /** How wet the leaves are, 0 dry to 1 (`look.wet`). */
   const uWet = uniform(0);
+  /** `look.strains`, `look.drought`. */
+  const uStrains = uniform(0.5);
+  const uDrought = uniform(0);
   const uStir = uniform(new THREE.Vector4());
   // The grass's memory of what has been through it (after bevy-grass's trample buffer): a grid of cells
   // `TRACK_CELL_M` across, `TRACK_SIDE` a side, over the ground about the eye, wrapping round, so a cell
@@ -1226,9 +1232,21 @@ export function createGrass(options: GrassOptions): Grass {
    * its ragged edge and all: at the most a centre a square away is three quarters of one from the place.
    */
   const REACH_MOST = 0.68;
-  const inPatch = (xz: Vec2, k: THREE.Node<"int">): THREE.Node<"float"> => {
-    // (More of them where the ground suits them and fewer where it does not: `patchSite`.)
-    const share = clamp(row(k, 10).w.mul(float(1).add(row(k, 11).x.mul(dryAt(xz)).mul(1.8))), float(0), float(1));
+  /** Metres from a stand's edge over which `patchEdge` goes from all to none. */
+  const PATCH_EDGE_M = [1.5, 7];
+  /** The colour a dry spell turns mown grass, as a multiplier on its own (by eye: straw, not dead). */
+  const SCORCH_TINT = [1.12, 1.0, 0.68];
+  const inPatch = (xz: Vec2, k: THREE.Node<"int">, edge: THREE.Node<"float"> = float(1e3), shadeToo = true): THREE.Node<"float"> => {
+    // (More of them where the ground suits them and fewer where it does not: `patchSite`; and towards the
+    // stand's edge and in the trees' shade, or away from them, `patchEdge`: in within a few metres of the edge.)
+    const towards = row(k, 18).z;
+    // (Not for the ground's colour (`shadeToo`): a host's ground shader has its own textures to look up and a
+    // stage is sure of only sixteen; with the shelter's too a course with drawn ground had seventeen and drew
+    // no ground at all. Its leaves take the shade, and the ground under a green's leaves is near enough.)
+    const shaded = shadeToo && options.world?.shelter ? clamp(options.world.shelter(xz), float(0), float(1)) : float(0);
+    const edgeward = float(1).sub(smoothstep(float(PATCH_EDGE_M[0]), float(PATCH_EDGE_M[1]), edge)).add(shaded).min(float(1));
+    const byEdge = max(float(0), float(1).add(towards.mul(edgeward.mul(2.2).sub(0.6))));
+    const share = clamp(row(k, 10).w.mul(float(1).add(row(k, 11).x.mul(dryAt(xz)).mul(1.8))).mul(byEdge), float(0), float(1));
     const size = row(k, 8).z;
     const turn = (v: Vec2, c: number, sn: number) => vec2(v.x.mul(c).sub(v.y.mul(sn)), v.x.mul(sn).add(v.y.mul(c)));
     // (Where colonies get in at all: over some ten patches' breadth, more here and none there.)
@@ -1304,7 +1322,65 @@ export function createGrass(options: GrassOptions): Grass {
     return mix(grown, blotched, isBlotches).mul(step(float(0.005), share));
   };
   /** A place's colour for being in a patch or not, as a multiplier. */
-  const patchTint = (xz: Vec2, k: THREE.Node<"int">): Vec3 => mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), inPatch(xz, k));
+  const patchTint = (xz: Vec2, k: THREE.Node<"int">, edge: THREE.Node<"float"> = float(1e3)): Vec3 => mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), inPatch(xz, k, edge, false));
+
+  /**
+   * A place's colour for its strain (`Species.mosaic`), as a multiplier: the ground is shared out among
+   * touching patches, each the nearest of a scatter of centres (the larger the strain the further it
+   * reaches: weighted), their lines wandering; each patch a shade lighter or darker and a little yellower
+   * or bluer than the next, more so as `look.strains` says the season shows it.
+   */
+  const strainTint = (xz: Vec2, k: THREE.Node<"int">): Vec3 => {
+    const amount = row(k, 18).x.mul(uStrains);
+    const size = row(k, 18).y;
+    const wander = noise(xz.div(size.mul(2.1)).add(vec2(0.47, 0.19)));
+    const g = xz.add(vec2(wander.r, wander.g).sub(0.5).mul(size).mul(0.9)).div(size);
+    const home = floor(g);
+    const best = float(1e3).toVar();
+    const next = float(1e3).toVar();
+    const id = vec2(0, 0).toVar();
+    const id2 = vec2(0, 0).toVar();
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const cell = home.add(vec2(dx, dz));
+        const hc = mod(cell, float(4096));
+        const centre = cell.add(vec2(hash21(hc.add(5.1)), hash21(hc.add(9.3))).mul(0.8).add(0.1));
+        const d = dot(g.sub(centre), g.sub(centre)).sub(hash21(hc.add(2.7)).mul(0.45));
+        const nearer = d.lessThan(best);
+        const second = d.lessThan(next);
+        id2.assign(nearer.select(id, second.select(cell, id2)));
+        next.assign(nearer.select(best, min(next, d)));
+        id.assign(nearer.select(cell, id));
+        best.assign(min(best, d));
+      }
+    }
+    // (Each patch's colour, and its neighbour's: where two strains meet they grow in among each other over a
+    // hand or so, so the line between them is soft, not drawn.)
+    const toneOf = (c: Vec2): Vec3 => {
+      const hid = mod(c, float(4096));
+      const shade = hash21(hid.add(13.7)).sub(0.5).mul(2);
+      const warm = hash21(hid.add(29.1)).sub(0.5).mul(2);
+      return vec3(shade).add(vec3(0.5, 0.12, -0.7).mul(warm));
+    };
+    const among = float(0.5).mul(float(1).sub(smoothstep(float(0), float(0.18), next.sub(best))));
+    return vec3(1).add(mix(toneOf(id), toneOf(id2), among).mul(amount)).max(vec3(0.5));
+  };
+
+  /**
+   * A place's colour for a dry spell (`Species.scorch`, `look.drought`), as a multiplier: small spots,
+   * a hand to a foot across, gathered on the crowns and in a few drifts; and a ring along the stand's edge
+   * a mower's width in, where the clean-up pass turns. Straw, not dead: a dry green is paler and tanner
+   * in places, never bare.
+   */
+  const scorchTint = (xz: Vec2, k: THREE.Node<"int">, edge: THREE.Node<"float">): Vec3 => {
+    const amount = row(k, 18).w.mul(uDrought);
+    const crown = smoothstep(float(0.05), float(0.6), dryAt(xz));
+    const drift = smoothstep(float(0.5), float(0.75), noise(xz.div(6.1).add(0.91)).g);
+    const spots = smoothstep(float(0.6), float(0.7), noise(xz.div(0.32).add(0.21)).b.mul(0.7).add(noise(xz.div(1.1).add(0.57)).r.mul(0.3)));
+    const ring = smoothstep(float(0.08), float(0.25), edge).mul(float(1).sub(smoothstep(float(0.55), float(0.85), edge))).mul(smoothstep(float(0.35), float(0.6), noise(xz.div(0.6).add(0.33)).a));
+    const browned = max(spots.mul(max(crown, drift.mul(0.6))), ring.mul(0.7)).mul(amount);
+    return mix(vec3(1), vec3(SCORCH_TINT[0], SCORCH_TINT[1], SCORCH_TINT[2]), browned);
+  };
 
   /**
    * How much of the light reaches a stand's roots, 0..1. Light falls off through leaves as exp(-K L)
@@ -1438,7 +1514,7 @@ export function createGrass(options: GrassOptions): Grass {
     const onGround = forHost ? vec4(1, 0, 1, 1) : leafShadow(positionWorld, row(k, 0).x, row(k, 1).x);
     const leavesShade = mix(float(1), mix(float(LEAF_IN_SHADE), float(1), mix(onGround.w, onGround.x, onGround.z)), onGround.y);
     // What the stand does to the ground's colour, apart from what colour that is.
-    const stand = vec3(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow);
+    const stand = vec3(leavesShade).mul(siteTint(xz)).mul(patchTint(xz, k, m.edge)).mul(strainTint(xz, k)).mul(scorchTint(xz, k, m.edge)).mul(under).mul(laidShade(xz, layAt(xz, k))).mul(float(1).add(grain)).mul(lying).mul(inSeed).mul(blown).mul(glow);
     // (For a host with its own ground: that alone, with the grass's own shade and none of the world's, which is the host's to put on its ground itself.)
     // (As a share of the stand's own mean: the host's colour is the stand's as a whole, so far off, where the
     // ground stands in for the stand, this is 1 and the host's colour is what is seen. See `standTone`.)
@@ -2016,7 +2092,7 @@ export function createGrass(options: GrassOptions): Grass {
 
         const tallNode = tall0.toVar();
         // (The grass in a patch is its own height.)
-        const patchHere = inPatch(xz, k).toVar();
+        const patchHere = inPatch(xz, k, here.edge).toVar();
         tallNode.mulAssign(mix(float(1), row(k, 8).w, patchHere));
         // Beside shorter grass, or bare ground, a stand comes down to meet it over a stride (by the canopy's
         // picture, which is the mean of the two at their line): never up, so mown turf beside rough stays
@@ -2082,7 +2158,7 @@ export function createGrass(options: GrassOptions): Grass {
           .add(vec2(pressed.x, pressed.y));
 
         // (What of the sky it sees is worked out half way up it, and is in its colour; the sun at its root and at its tip go with it, for the leaf to shade between.)
-        const colLit = tone(xz, base).mul(mix(float(1), float(TRAIL_WIPED_TINT), pressed.w)).mul(siteTint(xz)).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
+        const colLit = tone(xz, base).mul(mix(float(1), float(TRAIL_WIPED_TINT), pressed.w)).mul(siteTint(xz)).mul(mix(vec3(1), vec3(row(k, 10).x, row(k, 10).y, row(k, 10).z), patchHere)).mul(strainTint(xz, k)).mul(scorchTint(xz, k, here.edge)).mul(light(ground.normal)).mul(laidShade(xz, lay)).mul(skyOpen(xz, tall0.mul(STAND_SUN)));
         // (A fine leaf is broadened for the leaves the view thinned out about it, not for those its species never grows.)
         const broaden = clamp(float(1).div(pow(max(viewShare, float(0.1)), float(0.5))).sub(1), float(0), float(BROADEN_MAX));
         outState.assign(vec4(lean.x, lean.y, tall, gust.sub(0.5).mul(min(windTakes, float(1)))));
@@ -2726,7 +2802,7 @@ export function createGrass(options: GrassOptions): Grass {
   };
   const bloomMeshes = makeBlooms();
   const stats = { plants: all.reduce((n, l) => n + l.total, 0), leaves: all.reduce((n, l) => n + l.leaves, 0), computed: 0, flowers: BLOOM_NEAR.count * BLOOM_NEAR.count + BLOOM_FAR.count * BLOOM_FAR.count };
-  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, wet: 0, blooms: true, amount: 1, bare };
+  const look = { clumpSize: 0.85, macro: 0.3, edgeWobble: 0.03, groundShade: 1, stripes: 1, shadow: 0.6, occlusion: 0.45, fold: 1, relief: 1, leafPixels: 1, depth: 0.5, mown: false, site: 0.5, leafShadows: true, brightest: 4, wet: 0, blooms: true, amount: 1, strains: 0.5, drought: 0, bare };
   const fwd = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const shadowAt = new THREE.Vector3();
@@ -2861,6 +2937,8 @@ export function createGrass(options: GrassOptions): Grass {
       uSite.value = look.site;
       uBrightest.value = look.brightest;
       uWet.value = Math.min(1, Math.max(0, look.wet));
+      uStrains.value = Math.min(1, Math.max(0, look.strains));
+      uDrought.value = Math.min(1, Math.max(0, look.drought));
       for (const m of bloomMeshes) m.visible = look.blooms && anyBlooms;
       uAmount.value = Math.min(1, Math.max(0.05, look.amount));
       uShade.value.set(look.shadow, look.occlusion);

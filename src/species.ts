@@ -137,6 +137,28 @@ export interface Species {
   patchTint: [number, number, number];
   /** How tall the grass in a patch is, as a multiple of the species' height. */
   patchTall: number;
+  /**
+   * Where its patches get in besides the lie of the ground (`patchSite`), -1..1: towards the stand's edge
+   * and into the trees' shade (1: annual meadow-grass in a bent green, which comes in from the collar and
+   * takes the shaded and worn ground first), away from them (-1: the bent left in a meadow-grass green,
+   * holding out in the open middle), or neither (0). Left out: 0.
+   */
+  patchEdge?: number;
+  /**
+   * How unlike one another its plants' strains are, as a share of its colour (0: all alike). A green
+   * sown from a bent bred of a few parents, or grown over by many strains of annual meadow-grass, comes
+   * to be a quilt of touching patches each a shade unlike the next (USGA: "a patchwork quilt"), most
+   * in early spring and late autumn and hardly at all in summer (`look.strains`). Left out: 0.
+   */
+  mosaic?: number;
+  /** How broad a strain's patch is, roughly (m). Left out: 0.9. */
+  mosaicSize?: number;
+  /**
+   * How readily it browns in a dry spell, 0..1 (`look.drought`): small spots on the crowns and the
+   * high, firm ground, and a ring along its edge where the mower turns (the clean-up pass), as greens go
+   * first. Left out: 0.
+   */
+  scorch?: number;
 
   // The ground under it (its picture is the field's: `Grass.bakeGround`, `Grass.setGroundPicture`).
   /** How much of the ground's picture shows: the leaves lying on it, and the dark between them, 0..1. */
@@ -169,7 +191,7 @@ export type TextureMode = "detail" | "color";
 export const MAX_SPECIES = 16;
 /** Four numbers to a slot, this many slots to a species. */
 export type PatchKind = "colonies" | "runners" | "blotches";
-export const SPECIES_SLOTS = 18;
+export const SPECIES_SLOTS = 19;
 
 const TIP_CODE: Record<TipShape, number> = { point: 0, cut: 1, square: 2 };
 
@@ -191,7 +213,7 @@ export function makeSpeciesTable(): THREE.Vector4[] {
  *   7  the picture's layer (-1 for none), its strength, its mode (0 detail, 1 colour), cut-out
  *   8  the ground's picture: how much shows (0 if it has none), its tile (m)
  *        (and in z, w: patchSize, patchTall)
- *   9  the ground's picture's own mean colour (linear r, g, b), patches are blotches (1) or colonies (0)
+ *   9  the ground's picture's own mean colour (linear r, g, b), patches are colonies (0), blotches (1) or runners (2)
  *  10  patchTint r, g, b, patch
  *  11  patchSite, edgeBlend, cutTip, seedShare
  *  12  tussock, stem, flower, clumpScale
@@ -200,6 +222,7 @@ export function makeSpeciesTable(): THREE.Vector4[] {
  *  15    the share of ground
  *  16    where they take (-1 hollows .. 1 crowns)
  *  17    where: 0 in drifts, 1 only in the species' patches, 2 in drifts on its tussocks
+ *  18  mosaic, mosaicSize, patchEdge, scorch
  *
  * `layers` gives each picture's name its layer in the leaf texture, `flowerAt` each flower's name its
  * row in the flower table (`packFlowers`).
@@ -252,6 +275,7 @@ export function packSpecies(
     table[row + 15].set(cover[0], cover[1], cover[2], cover[3]);
     table[row + 16].set(site[0], site[1], site[2], site[3]);
     table[row + 17].set(inPatches[0], inPatches[1], inPatches[2], inPatches[3]);
+    table[row + 18].set(Math.min(0.3, Math.max(0, s.mosaic ?? 0)), Math.max(0.1, s.mosaicSize ?? 0.9), Math.min(1, Math.max(-1, s.patchEdge ?? 0)), Math.min(1, Math.max(0, s.scorch ?? 0)));
     c.set(s.color);
     table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), Math.min(4, Math.max(0.25, s.clumpScale ?? 1)));
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
@@ -426,14 +450,20 @@ export const TURF_SPECIES: Species[] = [
     height: 0.0032, heightSpread: 0.08, density: 2, width: 0.0009, widthSpread: 0.0003, tip: "cut",
     splay: 0.25, droop: 0.2, stiffness: 1, disorder: 0.25, color: "#6b8d4c", tipTint: [1.03, 1.04, 0.98], rootShade: 0.8, variation: 0.13,
     dry: 0.005, sheen: 0, lay: 1, groundTile: 0.35,
-    // (Annual meadow-grass in it, as nearly every bent green has within a few years. It gets in where the green stays wet.)
-    patchSite: -0.7, patch: 0.16, patchSize: 0.5, patchTint: [1.12, 1.1, 0.98], patchTall: 1.06,
+    // (Annual meadow-grass in it, as nearly every bent green has within a few years. It gets in where the green
+    // stays wet, and from the collar inwards, and where the trees shade it: USGA, Green Section Record.)
+    patchSite: -0.7, patch: 0.16, patchSize: 0.5, patchTint: [1.12, 1.1, 0.98], patchTall: 1.06, patchEdge: 0.7,
+    // (A bent bred of a few parents grows into a quilt of its strains as the green ages: USGA, "Segregation
+    // in Bentgrass Greens". How unlike, by eye: two per cent or so; at five it read as camouflage. Its meadow-grass wilts first in a dry spell.)
+    mosaic: 0.022, mosaicSize: 1.4, scorch: 0.8,
   }),
   turf("Collar (creeping bent)", 0, { cutTip: 0.18,
     height: 0.008, heightSpread: 0.1, density: 2, width: 0.0011, widthSpread: 0.0004, tip: "cut",
     splay: 0.4, droop: 0.3, stiffness: 1, disorder: 0.3, color: "#688b4d", tipTint: [1.04, 1.05, 0.97], rootShade: 0.76, variation: 0.15,
     dry: 0.005, sheen: 0, lay: 1, groundTile: 0.4,
-    patchSite: -0.7, patch: 0.12, patchSize: 0.5, patchTint: [1.12, 1.1, 0.98], patchTall: 1.06,
+    patchSite: -0.7, patch: 0.12, patchSize: 0.5, patchTint: [1.12, 1.1, 0.98], patchTall: 1.06, patchEdge: 0.5,
+    // (The collar goes first in a dry spell: USGA.)
+    mosaic: 0.02, mosaicSize: 1.4, scorch: 1,
   }),
   turf("Fairway (perennial rye)", 1, { cutTip: 0.3,
     height: 0.011, heightSpread: 0.12, density: 1.5, width: 0.0018, widthSpread: 0.0006, tip: "cut",
@@ -579,7 +609,10 @@ export const MORE_GRASSES: { poaGreen: Species; kikuyuFairway: Species; kikuyuRo
     dry: 0.008, sheen: 0, lay: 1, groundTile: 0.35,
     // (The bent that is left in it: darker, finer, a little lower; spreading by its runners, not by seed, so
     // rounder patches and no seedlings about them. How much darker by eye: as dark as 0.89 it read as stains.)
-    patchKind: "runners", patchSite: 0, patch: 0.14, patchSize: 0.45, patchTint: [0.92, 0.94, 1.02], patchTall: 0.95,
+    patchKind: "runners", patchSite: 0, patch: 0.14, patchSize: 0.45, patchTint: [0.92, 0.94, 1.02], patchTall: 0.95, patchEdge: -0.5,
+    // (Many strains of meadow-grass, each its own shade, more than a bent green's: USGA, "Why Are Our Greens So
+    // Patchy and Bumpy?". And it wilts first in a dry spell.)
+    mosaic: 0.028, mosaicSize: 1.1, scorch: 1,
   }),
   kikuyuFairway: turf("Fairway (kikuyu)", 1, { cutTip: 0.4,
     height: 0.013, heightSpread: 0.1, density: 1.7, width: 0.0033, widthSpread: 0.0009, tip: "cut",
@@ -603,6 +636,7 @@ export const MORE_GRASSES: { poaGreen: Species; kikuyuFairway: Species; kikuyuRo
     dry: 0.03, sheen: 0.2, lay: 0.85, groundTile: 0.35,
     // (Browner where it dries first, on the crowns.)
     patchKind: "blotches", patchSite: 0.8, patch: 0.14, patchSize: 0.8, patchTint: [1.1, 1.0, 0.84], patchTall: 1,
+    mosaic: 0.015, mosaicSize: 1.2, scorch: 0.6,
   }),
   fescueFairway: turf("Fairway (fine fescue)", 1, { cutTip: 0.4,
     height: 0.01, heightSpread: 0.14, density: 2.2, width: 0.0006, widthSpread: 0.0002, tip: "cut",
