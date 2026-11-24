@@ -154,6 +154,13 @@ export interface Species {
   /** How broad a strain's patch is, roughly (m). Left out: 0.9. */
   mosaicSize?: number;
   /**
+   * The colour of the ground under it, as a multiplier on the ground's own (the host's, under
+   * `groundShade`): the ground shows between the stems of a thin stand, and is not the same ground
+   * everywhere. Sand under a links' thin fescue, peat under a heath, mud in a wet meadow. Only between the
+   * leaves: far off, where the ground stands in for the stand, it is the stand's colour. Left out: 1, 1, 1.
+   */
+  soil?: [number, number, number];
+  /**
    * How readily it browns in a dry spell, 0..1 (`look.drought`): small spots on the crowns and the
    * high, firm ground, and a ring along its edge where the mower turns (the clean-up pass), as greens go
    * first. Left out: 0.
@@ -191,7 +198,7 @@ export type TextureMode = "detail" | "color";
 export const MAX_SPECIES = 16;
 /** Four numbers to a slot, this many slots to a species. */
 export type PatchKind = "colonies" | "runners" | "blotches";
-export const SPECIES_SLOTS = 19;
+export const SPECIES_SLOTS = 20;
 
 const TIP_CODE: Record<TipShape, number> = { point: 0, cut: 1, square: 2 };
 
@@ -223,6 +230,7 @@ export function makeSpeciesTable(): THREE.Vector4[] {
  *  16    where they take (-1 hollows .. 1 crowns)
  *  17    where: 0 in drifts, 1 only in the species' patches, 2 in drifts on its tussocks
  *  18  mosaic, mosaicSize, patchEdge, scorch
+ *  19  soil r, g, b
  *
  * `layers` gives each picture's name its layer in the leaf texture, `flowerAt` each flower's name its
  * row in the flower table (`packFlowers`).
@@ -275,6 +283,8 @@ export function packSpecies(
     table[row + 15].set(cover[0], cover[1], cover[2], cover[3]);
     table[row + 16].set(site[0], site[1], site[2], site[3]);
     table[row + 17].set(inPatches[0], inPatches[1], inPatches[2], inPatches[3]);
+    const soil = s.soil ?? [1, 1, 1];
+    table[row + 19].set(Math.max(0, soil[0]), Math.max(0, soil[1]), Math.max(0, soil[2]), 0);
     table[row + 18].set(Math.min(0.3, Math.max(0, s.mosaic ?? 0)), Math.max(0.1, s.mosaicSize ?? 0.9), Math.min(1, Math.max(-1, s.patchEdge ?? 0)), Math.min(1, Math.max(0, s.scorch ?? 0)));
     table[row + 12].set(Math.min(1, Math.max(0, s.tussock)), Math.min(1, Math.max(0, s.stem)), Math.min(1, Math.max(0, s.flower)), Math.min(4, Math.max(0.25, s.clumpScale ?? 1)));
     table[row + 10].set(s.patchTint[0], s.patchTint[1], s.patchTint[2], Math.min(1, Math.max(0, s.patch)));
@@ -378,7 +388,7 @@ export function cloneSpecies(list: readonly Species[]): Species[] {
     // (A preset from when a species had one flower: `bloom`, `bloomPerM2`, `bloomCover`.)
     const { bloom, bloomPerM2, bloomCover, ...rest } = s as Species & { bloom?: string; bloomPerM2?: number; bloomCover?: number };
     const blooms: Bloom[] = s.blooms ? s.blooms.map((b) => ({ ...b })) : bloom && (bloomPerM2 ?? 0) > 0 ? [{ flower: bloom, perM2: bloomPerM2!, cover: bloomCover ?? 0, site: 0, where: "drifts" }] : [];
-    return { ...ADDED_LATER, ...rest, blooms, tipTint: [...s.tipTint], seedTint: [...s.seedTint], patchTint: [...(s.patchTint ?? NO_PATCHES.patchTint)] };
+    return { ...ADDED_LATER, ...rest, blooms, tipTint: [...s.tipTint], seedTint: [...s.seedTint], patchTint: [...(s.patchTint ?? NO_PATCHES.patchTint)], ...(s.soil ? { soil: [...s.soil] as [number, number, number] } : {}) };
   });
 }
 
@@ -678,13 +688,29 @@ export const MORE_GRASSES: { poaGreen: Species; kikuyuFairway: Species; kikuyuRo
  * - Wavy hair-grass (Deschampsia flexuosa): leaves rolled to a thread, 0.3 to 0.6 mm (New Zealand; 0.3 to
  *   0.8, Kew), 5 to 20 cm long, in dense tufts far overtopped by their stems, 20 to 75 cm; a loose panicle
  *   on wavy branches, silvery and purplish. Of acid heath and open woods.
+ * - Creeping bent (Agrostis stolonifera) left unmown: leaves flat, 0.5 to 5 mm (Kew; to 8, New Zealand),
+ *   1 to 10 cm long; stems 8 to 40 cm, bent at their foot and rooting where they touch the ground, from
+ *   runners over it; a narrow panicle, spread in flower and drawn in after, greenish to purplish. With red
+ *   fescue the body of a grazed or wet coastal meadow (the Juncetum gerardii's closed swards).
+ * - Saltmarsh rush (Juncus gerardii): a rush, not a grass, of coastal meadows the sea reaches in winter:
+ *   slender, wiry, dark green stems 25 to 80 cm (New Zealand 40 to 80; Burren to 60), with flat narrow
+ *   leaves half their length, in loose tufts along a creeping black rootstock, not in tussocks; dark brown
+ *   flowers in a cluster near the top. Drawn as stems, as soft rush is (`MORE_PLANTS.rush`).
  *
  * Their seed heads stand where every grass's here does, a fifth over its leaves: the floras' stems stand
  * further over some of them (wavy hair-grass's most), which a leaf's three joints cannot draw. The colours
  * are set by eye from the floras' words; the habit by eye too, as with the others. None has flowers of
  * its own: a host gives a mix its flowers.
  */
-export const NATIVE_GRASSES: { sheepsFescue: Species; commonBent: Species; yorkshireFog: Species; sweetVernal: Species; wavyHairGrass: Species } = {
+export const NATIVE_GRASSES: {
+  sheepsFescue: Species;
+  commonBent: Species;
+  yorkshireFog: Species;
+  sweetVernal: Species;
+  wavyHairGrass: Species;
+  creepingBent: Species;
+  saltmarshRush: Species;
+} = {
   sheepsFescue: turf("Sheep's fescue", 4, {
     height: 0.18, heightSpread: 0.7, density: 0.85, width: 0.00045, widthSpread: 0.00015, tip: "point",
     splay: 1, droop: 0.9, twist: 0.8, seedHead: 1, seedShare: 0.15, stiffness: 0.3, clump: 1, tussock: 0.35, disorder: 1,
@@ -713,6 +739,18 @@ export const NATIVE_GRASSES: { sheepsFescue: Species; commonBent: Species; yorks
     height: 0.18, heightSpread: 0.7, density: 0.9, width: 0.00045, widthSpread: 0.0002, tip: "point",
     splay: 1, droop: 1, twist: 1, seedHead: 1, seedShare: 0.4, stiffness: 0.25, clump: 1, tussock: 0.3, disorder: 1,
     color: "#6f9052", tipTint: [1.1, 1.08, 0.9], seedTint: [1.4, 1.26, 1.36], rootShade: 0.42, variation: 0.2, dry: 0.15, sheen: 0.6, edgeBlend: 0.8,
+    blooms: [],
+  }),
+  creepingBent: turf("Creeping bent", 4, {
+    height: 0.2, heightSpread: 0.5, density: 1.1, width: 0.0025, widthSpread: 0.0012, tip: "point",
+    splay: 1.2, droop: 1.3, twist: 1, seedHead: 1, seedShare: 0.25, stiffness: 0.15, clump: 0.2, disorder: 1,
+    color: "#6b9152", tipTint: [1.07, 1.06, 0.93], seedTint: [1.25, 1.05, 1.05], rootShade: 0.45, variation: 0.2, dry: 0.08, sheen: 0.2, edgeBlend: 0.9,
+    blooms: [],
+  }),
+  saltmarshRush: turf("Saltmarsh rush", 5, {
+    height: 0.4, heightSpread: 0.45, density: 0.9, tufted: true, width: 0.0014, widthSpread: 0.0005, tip: "point",
+    splay: 0.35, droop: 0.1, twist: 0, seedHead: 0, stiffness: 0.8, clump: 0.6, disorder: 0.6, tussock: 0.15, stem: 1, flower: 0.4,
+    color: "#4d6b3c", tipTint: [1.1, 1.0, 0.8], rootShade: 0.4, variation: 0.2, dry: 0.15, sheen: 0.8, edgeBlend: 0.6,
     blooms: [],
   }),
 };

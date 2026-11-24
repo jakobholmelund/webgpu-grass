@@ -148,6 +148,8 @@ America):
 | `yorkshireFog` | A damp, rich meadow's: soft, hairy, pale grey-green leaves, pinkish panicles | 3–10 mm |
 | `sweetVernal` | The first meadow grass to flower: a gold, spike-like panicle | 2–6.5 mm |
 | `wavyHairGrass` | Acid heath: thread leaves in tufts, silvery-purple panicles on wavy branches | 0.3–0.6 mm |
+| `creepingBent` | Left unmown on a wet or grazed coastal meadow, with red fescue: runners, flat leaves, a purplish panicle | 0.5–5 mm |
+| `saltmarshRush` | A rush of coastal meadows the sea reaches in winter: wiry dark stems in loose tufts | stems |
 
 A stand of several is a mix: one grass is the stand's body (its lead)
 and the others grow in it in patches of their own sizes.
@@ -161,6 +163,12 @@ const map = mixedMap(fieldMap({ ... }), [
   { species: 8, members: [{ species: 9, share: 0.3, patchSize: 1.5 }, { species: 10, share: 0.15, patchSize: 2 }] },
 ]);
 ```
+
+The ground between a stand's stems is not the same everywhere: sand under
+a links' thin fescue, peat on a heath, mud in a wet meadow.
+`Species.soil` is what the ground's colour is multiplied by under that
+species (the host's ground, under `groundShade`), so a mix's thin patches
+can show their own soil.
 
 A member may be `NO_GRASS` instead of a row: bare ground in patches,
 where the host's own ground shows (sandy scrapes on a links, thin ground
